@@ -14,6 +14,7 @@ import type {
   TuiStateAccess,
 } from "./tui-types.js";
 import { resolveDefaultAgentId } from "../agents/agent-scope.js";
+import { scheduleInterval, cancelInterval } from "../agents/timer-wheel.js";
 import { loadConfig } from "../config/config.js";
 import {
   buildAgentMainSessionKey,
@@ -21,6 +22,7 @@ import {
   normalizeMainKey,
   parseAgentSessionKey,
 } from "../routing/session-key.js";
+import { initializeBrowserForTUI, cleanupBrowserForTUI } from "./browser-integration.js";
 import { getSlashCommands } from "./commands.js";
 import { ChatLog } from "./components/chat-log.js";
 import { CustomEditor } from "./components/custom-editor.js";
@@ -36,6 +38,8 @@ import { buildWaitingStatusMessage, defaultWaitingPhrases } from "./tui-waiting.
 
 export { resolveFinalAssistantText } from "./tui-formatters.js";
 export type { TuiOptions } from "./tui-types.js";
+
+let tuiInstanceCounter = 0;
 
 export function createEditorSubmitHandler(params: {
   editor: {
@@ -78,6 +82,13 @@ export function createEditorSubmitHandler(params: {
 }
 
 export async function runTui(opts: TuiOptions) {
+  // Initialize browser automation
+  try {
+    await initializeBrowserForTUI();
+  } catch (error: any) {
+    console.warn("⚠️  Browser automation not available:", error.message);
+  }
+
   const config = loadConfig();
   const initialSessionInput = (opts.session ?? "").trim();
   let sessionScope: SessionScope = (config.session?.scope ?? "per-sender") as SessionScope;
@@ -105,7 +116,10 @@ export async function runTui(opts: TuiOptions) {
   let activityStatus = "idle";
   let connectionStatus = "connecting";
   let statusTimeout: NodeJS.Timeout | null = null;
-  let statusTimer: NodeJS.Timeout | null = null;
+  let statusTimerActive = false;
+  const tuiInstanceId = ++tuiInstanceCounter;
+  const statusTimerId = `tui-status-${tuiInstanceId}`;
+  const waitingTimerId = `tui-waiting-${tuiInstanceId}`;
   let statusStartedAt: number | null = null;
   let lastActivityStatus = activityStatus;
 
@@ -370,7 +384,7 @@ export async function runTui(opts: TuiOptions) {
   };
 
   let waitingTick = 0;
-  let waitingTimer: NodeJS.Timeout | null = null;
+  let waitingTimerActive = false;
   let waitingPhrase: string | null = null;
 
   const updateBusyStatusMessage = () => {
@@ -397,27 +411,28 @@ export async function runTui(opts: TuiOptions) {
   };
 
   const startStatusTimer = () => {
-    if (statusTimer) {
+    if (statusTimerActive) {
       return;
     }
-    statusTimer = setInterval(() => {
+    statusTimerActive = true;
+    scheduleInterval(statusTimerId, 1000, () => {
       if (!busyStates.has(activityStatus)) {
         return;
       }
       updateBusyStatusMessage();
-    }, 1000);
+    });
   };
 
   const stopStatusTimer = () => {
-    if (!statusTimer) {
+    if (!statusTimerActive) {
       return;
     }
-    clearInterval(statusTimer);
-    statusTimer = null;
+    cancelInterval(statusTimerId);
+    statusTimerActive = false;
   };
 
   const startWaitingTimer = () => {
-    if (waitingTimer) {
+    if (waitingTimerActive) {
       return;
     }
 
@@ -429,20 +444,21 @@ export async function runTui(opts: TuiOptions) {
 
     waitingTick = 0;
 
-    waitingTimer = setInterval(() => {
+    waitingTimerActive = true;
+    scheduleInterval(waitingTimerId, 120, () => {
       if (activityStatus !== "waiting") {
         return;
       }
       updateBusyStatusMessage();
-    }, 120);
+    });
   };
 
   const stopWaitingTimer = () => {
-    if (!waitingTimer) {
+    if (!waitingTimerActive) {
       return;
     }
-    clearInterval(waitingTimer);
-    waitingTimer = null;
+    cancelInterval(waitingTimerId);
+    waitingTimerActive = false;
     waitingPhrase = null;
   };
 
@@ -510,6 +526,21 @@ export async function runTui(opts: TuiOptions) {
     const reasoning = sessionInfo.reasoningLevel ?? "off";
     const reasoningLabel =
       reasoning === "on" ? "reasoning" : reasoning === "stream" ? "reasoning:stream" : null;
+
+    // Add cache status if caching is active
+    const { getCacheMetricsTracker } = require("../agents/cache-metrics-tracker.js");
+    const tracker = getCacheMetricsTracker();
+    const hitRate = tracker.getHitRate();
+    const cacheStatus = hitRate > 0 ? `cache ${(hitRate * 100).toFixed(0)}%` : null;
+
+    // Add teleport status if teleported
+    const { getSessionTeleportManager } = require("../agents/session-teleport-manager.js");
+    const teleportManager = getSessionTeleportManager();
+    const teleportInfo = teleportManager.getTeleportedSessionInfo();
+    const teleportStatus = teleportInfo?.isTeleported
+      ? `${teleportInfo.hasLoggedFirstMessage ? "✓" : "~"}Teleport ${teleportInfo.sessionId.slice(0, 8)}`
+      : null;
+
     const footerParts = [
       `agent ${agentLabel}`,
       `session ${sessionLabel}`,
@@ -517,6 +548,8 @@ export async function runTui(opts: TuiOptions) {
       think !== "off" ? `think ${think}` : null,
       verbose !== "off" ? `verbose ${verbose}` : null,
       reasoningLabel,
+      cacheStatus,
+      teleportStatus,
       tokens,
     ].filter(Boolean);
     footer.setText(theme.dim(footerParts.join(" | ")));

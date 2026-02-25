@@ -51,6 +51,7 @@ import {
   resolveToolProfilePolicy,
   stripPluginOnlyAllowlist,
 } from "./tool-policy.js";
+import { getToolsWithSearch } from "./tools/tool-search-integration.js";
 
 function isOpenAIProvider(provider?: string) {
   const normalized = provider?.trim().toLowerCase();
@@ -294,6 +295,8 @@ export function createOpenClawCodingTools(options?: {
           workspaceDir: sandbox.workspaceDir,
           containerWorkdir: sandbox.containerWorkdir,
           env: sandbox.docker.env,
+          // NEW: Pass network restrictions to exec tool
+          network: sandbox.network,
         }
       : undefined,
   });
@@ -444,4 +447,37 @@ export function createOpenClawCodingTools(options?: {
   // pi-ai's Anthropic OAuth transport remaps tool names to Claude Code-style names
   // on the wire and maps them back for tool dispatch.
   return withAbort;
+}
+
+/**
+ * Get tools with Tool Search capability
+ *
+ * Enables support for 100-10,000 tools with 85%+ context savings.
+ * Uses deferred loading - only core tools loaded initially,
+ * others loaded on-demand via tool_search_tool_regex/bm25.
+ *
+ * @param options - Tool creation options
+ * @param searchOptions - Tool search options
+ * @returns Array of tools with search capability
+ */
+export function createOpenClawToolsWithSearch(
+  options: Parameters<typeof createOpenClawTools>[0] & { config?: OpenClawConfig },
+  searchOptions?: {
+    useCombinedSearch?: boolean;
+    maxEagerTools?: number;
+  },
+): AnyAgentTool[] {
+  // Get all tools normally
+  const allTools = createOpenClawTools(options);
+
+  // Get tools with search capability
+  const toolsWithSearch = getToolsWithSearch(options.config, searchOptions);
+
+  // If search is enabled, return search-enabled tools
+  // Otherwise return normal tools
+  if (searchOptions && allTools.length > (searchOptions.maxEagerTools || 10)) {
+    return toolsWithSearch;
+  }
+
+  return allTools;
 }

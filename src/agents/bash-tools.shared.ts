@@ -4,8 +4,8 @@ import fs from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { sliceUtf16Safe } from "../utils.js";
+import { forceKillTree } from "./kill-tree.js";
 import { assertSandboxPath } from "./sandbox-paths.js";
-import { killProcessTree } from "./shell-utils.js";
 
 const CHUNK_LIMIT = 8 * 1024;
 
@@ -14,6 +14,11 @@ export type BashSandboxConfig = {
   workspaceDir: string;
   containerWorkdir: string;
   env?: Record<string, string>;
+  // NEW: Network restrictions for sandbox (from Claude Code)
+  network?: {
+    allowedHosts?: string[];
+    deniedHosts?: string[];
+  };
 };
 
 export function buildSandboxEnv(params: {
@@ -118,7 +123,8 @@ export async function resolveSandboxWorkdir(params: {
 export function killSession(session: { pid?: number; child?: ChildProcessWithoutNullStreams }) {
   const pid = session.pid ?? session.child?.pid;
   if (pid) {
-    killProcessTree(pid);
+    // Use optimized forceKillTree with process group support (fire-and-forget)
+    void forceKillTree(pid);
   }
 }
 

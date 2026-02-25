@@ -3,6 +3,7 @@ import path from "node:path";
 import type { OpenClawConfig } from "../../config/config.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { CONFIG_DIR, resolveUserPath } from "../../utils.js";
+import { scheduleTimeout, cancelTimeout } from "../timer-wheel.js";
 import { resolvePluginSkillDirs } from "./plugin-skills.js";
 
 type SkillsChangeEvent = {
@@ -15,7 +16,7 @@ type SkillsWatchState = {
   watcher: FSWatcher;
   pathsKey: string;
   debounceMs: number;
-  timer?: ReturnType<typeof setTimeout>;
+  timerId?: string;
   pendingPath?: string;
 };
 
@@ -113,8 +114,8 @@ export function ensureSkillsWatcher(params: { workspaceDir: string; config?: Ope
   if (!watchEnabled) {
     if (existing) {
       watchers.delete(workspaceDir);
-      if (existing.timer) {
-        clearTimeout(existing.timer);
+      if (existing.timerId) {
+        cancelTimeout(existing.timerId);
       }
       void existing.watcher.close().catch(() => {});
     }
@@ -128,8 +129,8 @@ export function ensureSkillsWatcher(params: { workspaceDir: string; config?: Ope
   }
   if (existing) {
     watchers.delete(workspaceDir);
-    if (existing.timer) {
-      clearTimeout(existing.timer);
+    if (existing.timerId) {
+      cancelTimeout(existing.timerId);
     }
     void existing.watcher.close().catch(() => {});
   }
@@ -147,21 +148,23 @@ export function ensureSkillsWatcher(params: { workspaceDir: string; config?: Ope
 
   const state: SkillsWatchState = { watcher, pathsKey, debounceMs };
 
+  const timerId = `skills-watch-${workspaceDir.replace(/[^a-zA-Z0-9]/g, "-")}`;
   const schedule = (changedPath?: string) => {
     state.pendingPath = changedPath ?? state.pendingPath;
-    if (state.timer) {
-      clearTimeout(state.timer);
+    if (state.timerId) {
+      cancelTimeout(state.timerId);
     }
-    state.timer = setTimeout(() => {
+    state.timerId = timerId;
+    scheduleTimeout(timerId, debounceMs, () => {
       const pendingPath = state.pendingPath;
       state.pendingPath = undefined;
-      state.timer = undefined;
+      state.timerId = undefined;
       bumpSkillsSnapshotVersion({
         workspaceDir,
         reason: "watch",
         changedPath: pendingPath,
       });
-    }, debounceMs);
+    });
   };
 
   watcher.on("add", (p) => schedule(p));

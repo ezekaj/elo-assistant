@@ -60,6 +60,8 @@ export type EmbeddedPiSubscribeState = {
   messagingToolSentTargets: MessagingToolSend[];
   pendingMessagingTexts: Map<string, string>;
   pendingMessagingTargets: Map<string, MessagingToolSend>;
+  /** Tool start times for analytics duration tracking */
+  toolStartTimes: Map<string, number>;
 };
 
 export type EmbeddedPiSubscribeContext = {

@@ -1,8 +1,11 @@
 import type { OpenClawConfig } from "../config/config.js";
+import type { ThinkingMode } from "../config/types.thinking.js";
 import type { ModelCatalogEntry } from "./model-catalog.js";
+import { getCacheBetaHeader, isCachingSupported } from "../config/types.cache.js";
 import { resolveAgentModelPrimary } from "./agent-scope.js";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "./defaults.js";
 import { normalizeGoogleModelId } from "./models-config.providers.js";
+import { getThinkingManager, parseThinkingMode } from "./thinking-manager.js";
 
 export type ModelRef = {
   provider: string;
@@ -379,10 +382,33 @@ export function resolveThinkingDefault(params: {
   model: string;
   catalog?: ModelCatalogEntry[];
 }): ThinkLevel {
+  // Use thinking manager for universal support
+  const thinkingManager = getThinkingManager();
+  const modelString = `${params.provider}/${params.model}`;
+  const config = thinkingManager.getThinkingConfig(modelString);
+
+  // Map ThinkingMode to ThinkLevel
+  const modeToLevel: Record<ThinkingMode, ThinkLevel> = {
+    off: "off",
+    minimal: "minimal",
+    low: "low",
+    medium: "medium",
+    high: "high",
+    adaptive: "low", // Map adaptive to low as default
+  };
+
+  // Check user config override
   const configured = params.cfg.agents?.defaults?.thinkingDefault;
   if (configured) {
     return configured;
   }
+
+  // Use thinking manager's recommendation
+  if (config.mode !== "off") {
+    return modeToLevel[config.mode] || "low";
+  }
+
+  // Fallback to old logic
   const candidate = params.catalog?.find(
     (entry) => entry.provider === params.provider && entry.id === params.model,
   );
@@ -390,6 +416,53 @@ export function resolveThinkingDefault(params: {
     return "low";
   }
   return "off";
+}
+
+/**
+ * Get beta headers for a model
+ */
+export function getModelBetas(params: {
+  provider: string;
+  model: string;
+  enableCaching?: boolean;
+}): string[] {
+  const betas: string[] = [];
+
+  // Add caching beta header if enabled
+  if (params.enableCaching) {
+    const cacheHeader = getCacheBetaHeader(params.provider);
+    if (cacheHeader && isCachingSupported(params.provider)) {
+      betas.push(cacheHeader);
+    }
+  }
+
+  // Add thinking beta header if applicable
+  const thinkingManager = getThinkingManager();
+  const thinkingBetas = thinkingManager.getBetaHeaders(`${params.provider}/${params.model}`);
+  if (thinkingBetas) {
+    betas.push(...thinkingBetas);
+  }
+
+  return betas;
+}
+
+/**
+ * Check if interleaved thinking is supported for a model
+ */
+export function isInterleavedThinkingSupported(params: {
+  provider: string;
+  model: string;
+}): boolean {
+  const thinkingManager = getThinkingManager();
+  const modelString = `${params.provider}/${params.model}`;
+  return thinkingManager.isInterleavedSupported(modelString);
+}
+
+/**
+ * Check if prompt caching is supported for a model
+ */
+export function isPromptCachingSupported(params: { provider: string; model: string }): boolean {
+  return isCachingSupported(params.provider);
 }
 
 /**

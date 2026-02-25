@@ -1,9 +1,66 @@
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
 import { createEditTool, createReadTool, createWriteTool } from "@mariozechner/pi-coding-agent";
+import { statSync } from "node:fs";
 import type { AnyAgentTool } from "./pi-tools.types.js";
 import { detectMime } from "../media/mime.js";
 import { assertSandboxPath } from "./sandbox-paths.js";
 import { sanitizeToolResultImages } from "./tool-images.js";
+
+// ─── Read result cache ────────────────────────────────────────────────────────
+// Caches text-only AgentToolResults keyed by path+params+mtime.
+// Images are never cached (can be large and provider-sanitized already).
+
+type ReadCacheEntry = {
+  result: AgentToolResult<unknown>;
+  mtime: number;
+  timestamp: number;
+};
+
+const READ_CACHE = new Map<string, ReadCacheEntry>();
+const CACHE_TTL_MS = 60_000;
+const CACHE_MAX_ENTRIES = 200;
+
+function buildReadCacheKey(filePath: string, record: Record<string, unknown>): string {
+  const offset = record.offset ?? record.start_line ?? "";
+  const limit = record.limit ?? record.end_line ?? "";
+  return `${filePath}::${offset}::${limit}`;
+}
+
+function getCachedRead(key: string, mtime: number): AgentToolResult<unknown> | null {
+  const entry = READ_CACHE.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.timestamp > CACHE_TTL_MS) {
+    READ_CACHE.delete(key);
+    return null;
+  }
+  if (entry.mtime !== mtime) {
+    READ_CACHE.delete(key);
+    return null;
+  }
+  return entry.result;
+}
+
+function setCachedRead(key: string, result: AgentToolResult<unknown>, mtime: number): void {
+  // Skip caching image results
+  const content = Array.isArray(result.content) ? result.content : [];
+  if (content.some((b) => b && typeof b === "object" && (b as { type?: unknown }).type === "image"))
+    return;
+  // Evict oldest when at capacity
+  if (READ_CACHE.size >= CACHE_MAX_ENTRIES) {
+    const first = READ_CACHE.keys().next().value;
+    if (first) READ_CACHE.delete(first);
+  }
+  READ_CACHE.set(key, { result, mtime, timestamp: Date.now() });
+}
+
+/** Exported so callers (e.g. status commands) can inspect read-tool cache stats. */
+export function getReadToolCacheStats(): { entries: number; ttlMs: number; maxEntries: number } {
+  return { entries: READ_CACHE.size, ttlMs: CACHE_TTL_MS, maxEntries: CACHE_MAX_ENTRIES };
+}
+
+export function clearReadToolCache(): void {
+  READ_CACHE.clear();
+}
 
 // NOTE(steipete): Upstream read now does file-magic MIME detection; we keep the wrapper
 // to normalize payloads and sanitize oversized images before they hit providers.
@@ -293,10 +350,26 @@ export function createOpenClawReadTool(base: AnyAgentTool): AnyAgentTool {
         normalized ??
         (params && typeof params === "object" ? (params as Record<string, unknown>) : undefined);
       assertRequiredParams(record, CLAUDE_PARAM_GROUPS.read, base.name);
-      const result = await base.execute(toolCallId, normalized ?? params, signal);
+
       const filePath = typeof record?.path === "string" ? String(record.path) : "<unknown>";
+
+      // Cache lookup (skip for images by checking after we get the result)
+      let mtime = 0;
+      try {
+        mtime = statSync(filePath).mtimeMs;
+      } catch {
+        /* non-existent or inaccessible */
+      }
+      const cacheKey = buildReadCacheKey(filePath, record ?? {});
+      const cached = getCachedRead(cacheKey, mtime);
+      if (cached) return cached;
+
+      const result = await base.execute(toolCallId, normalized ?? params, signal);
       const normalizedResult = await normalizeReadImageResult(result, filePath);
-      return sanitizeToolResultImages(normalizedResult, `read:${filePath}`);
+      const sanitized = await sanitizeToolResultImages(normalizedResult, `read:${filePath}`);
+
+      setCachedRead(cacheKey, sanitized, mtime);
+      return sanitized;
     },
   };
 }

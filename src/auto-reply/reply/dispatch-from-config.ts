@@ -2,6 +2,10 @@ import type { OpenClawConfig } from "../../config/config.js";
 import type { FinalizedMsgContext } from "../templating.js";
 import type { GetReplyOptions, ReplyPayload } from "../types.js";
 import type { ReplyDispatcher, ReplyDispatchKind } from "./reply-dispatcher.js";
+import {
+  getResponseSuggestion,
+  shouldStaySilent,
+} from "../../agents/adaptive-response-integration.js";
 import { resolveSessionAgentId } from "../../agents/agent-scope.js";
 import { loadSessionStore, resolveStorePath } from "../../config/sessions.js";
 import { logVerbose } from "../../globals.js";
@@ -142,6 +146,42 @@ export async function dispatchReplyFromConfig(params: {
 
   if (shouldSkipDuplicateInbound(ctx)) {
     recordProcessed("skipped", { reason: "duplicate" });
+    return { queuedFinal: false, counts: dispatcher.getQueuedCounts() };
+  }
+
+  // Adaptive response: Check if we should respond based on urgency
+  const isGroup = ctx.ChatType === "group";
+  const isMentioned = Boolean(ctx.IsMentioned);
+  const isReply = Boolean(ctx.IsReply);
+  const messageBody =
+    typeof ctx.BodyForCommands === "string"
+      ? ctx.BodyForCommands
+      : typeof ctx.RawBody === "string"
+        ? ctx.RawBody
+        : typeof ctx.Body === "string"
+          ? ctx.Body
+          : "";
+
+  // Get adaptive classification
+  const adaptiveSuggestion = await getResponseSuggestion({
+    message: messageBody,
+    sender: ctx.From,
+    channelId: ctx.To ?? ctx.From,
+    isGroup,
+    isMentioned,
+    isReply,
+    recentContext: [],
+  });
+
+  // Log classification for debugging
+  logVerbose(
+    `dispatch-from-config: adaptive response urgency=${adaptiveSuggestion.urgency} mode=${adaptiveSuggestion.suggestedMode} reason="${adaptiveSuggestion.reasoning}"`,
+  );
+
+  // Skip if urgency too low (unless mentioned/reply - those always respond)
+  if (adaptiveSuggestion.shouldRespond === false && !isMentioned && !isReply) {
+    recordProcessed("skipped", { reason: `low_urgency:${adaptiveSuggestion.urgency}` });
+    markIdle("low_urgency");
     return { queuedFinal: false, counts: dispatcher.getQueuedCounts() };
   }
 

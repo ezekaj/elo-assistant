@@ -3,21 +3,49 @@ import type { GatewayMessageChannel } from "../utils/message-channel.js";
 import type { AnyAgentTool } from "./tools/common.js";
 import { resolvePluginTools } from "../plugins/tools.js";
 import { resolveSessionAgentId } from "./agent-scope.js";
+// Plan Mode tools
+import {
+  createEnterPlanModeTool,
+  createExitPlanModeTool,
+  createUpdatePlanTool,
+} from "./plan-mode/index.js";
 import { createAgentsListTool } from "./tools/agents-list-tool.js";
+import { createBriefingTool } from "./tools/briefing-tool.js";
 import { createBrowserTool } from "./tools/browser-tool.js";
 import { createCanvasTool } from "./tools/canvas-tool.js";
 import { createCronTool } from "./tools/cron-tool.js";
+import { createEditTool } from "./tools/edit.js";
 import { createGatewayTool } from "./tools/gateway-tool.js";
+import { createGlobTool } from "./tools/glob.js";
+import { createGrepTool } from "./tools/grep.js";
 import { createImageTool } from "./tools/image-tool.js";
 import { createMessageTool } from "./tools/message-tool.js";
 import { createNodesTool } from "./tools/nodes-tool.js";
+import {
+  createNotebookReadTool,
+  createNotebookEditTool,
+  createNotebookCellInfoTool,
+} from "./tools/notebook.js";
+// web_search disabled - requires Brave API key
+// import { createWebSearchTool } from "./tools/web-tools.js";
+import { createPredictiveTool } from "./tools/predictive-tool.js";
+import { createReadTool } from "./tools/read.js";
 import { createSessionStatusTool } from "./tools/session-status-tool.js";
 import { createSessionsHistoryTool } from "./tools/sessions-history-tool.js";
 import { createSessionsListTool } from "./tools/sessions-list-tool.js";
 import { createSessionsSendTool } from "./tools/sessions-send-tool.js";
 import { createSessionsSpawnTool } from "./tools/sessions-spawn-tool.js";
+import {
+  createTaskTool,
+  createTaskGetTool,
+  createTaskListTool,
+  createTaskCancelTool,
+  createTaskUpdateTool,
+  createTaskOutputTool,
+} from "./tools/task.js";
 import { createTtsTool } from "./tools/tts-tool.js";
-import { createWebFetchTool, createWebSearchTool } from "./tools/web-tools.js";
+import { createWebFetchTool } from "./tools/web-tools.js";
+import { createWriteTool } from "./tools/write.js";
 
 export function createOpenClawTools(options?: {
   sandboxBrowserBridgeUrl?: string;
@@ -66,10 +94,12 @@ export function createOpenClawTools(options?: {
         modelHasVision: options?.modelHasVision,
       })
     : null;
-  const webSearchTool = createWebSearchTool({
-    config: options?.config,
-    sandboxed: options?.sandboxed,
-  });
+  // web_search disabled - requires Brave API key
+  // const webSearchTool = createWebSearchTool({
+  //   config: options?.config,
+  //   sandboxed: options?.sandboxed,
+  // });
+  const webSearchTool = null;
   const webFetchTool = createWebFetchTool({
     config: options?.config,
     sandboxed: options?.sandboxed,
@@ -143,9 +173,49 @@ export function createOpenClawTools(options?: {
       agentSessionKey: options?.agentSessionKey,
       config: options?.config,
     }),
+    createGrepTool({
+      config: options?.config,
+    }),
+    createGlobTool({
+      config: options?.config,
+    }),
+    createTaskTool({
+      config: options?.config,
+    }),
+    createTaskGetTool(),
+    createTaskListTool(),
+    createTaskCancelTool(),
+    createTaskUpdateTool(),
+    createTaskOutputTool(),
+    createNotebookReadTool({
+      config: options?.config,
+    }),
+    createNotebookEditTool({
+      config: options?.config,
+    }),
+    createNotebookCellInfoTool({
+      config: options?.config,
+    }),
+    createReadTool({
+      config: options?.config,
+    }),
+    createWriteTool({
+      config: options?.config,
+    }),
+    createEditTool({
+      config: options?.config,
+    }),
+    // Plan Mode tools
+    createEnterPlanModeTool(),
+    createExitPlanModeTool(),
+    createUpdatePlanTool(),
     ...(webSearchTool ? [webSearchTool] : []),
     ...(webFetchTool ? [webFetchTool] : []),
     ...(imageTool ? [imageTool] : []),
+    createPredictiveTool({
+      agentSessionKey: options?.agentSessionKey,
+    }),
+    createBriefingTool(),
   ];
 
   const pluginTools = resolvePluginTools({

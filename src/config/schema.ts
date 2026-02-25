@@ -277,6 +277,9 @@ const FIELD_LABELS: Record<string, string> = {
   "memory.qmd.limits.maxInjectedChars": "QMD Max Injected Chars",
   "memory.qmd.limits.timeoutMs": "QMD Search Timeout (ms)",
   "memory.qmd.scope": "QMD Surface Scope",
+  "memory.neuroMemory": "Neuro-Memory Integration",
+  "memory.neuroMemory.enabled": "Enable Neuro-Memory",
+  "memory.neuroMemory.agentPath": "Neuro-Memory Agent Path",
   "auth.profiles": "Auth Profiles",
   "auth.order": "Auth Profile Order",
   "auth.cooldowns.billingBackoffHours": "Billing Backoff (hours)",
@@ -541,7 +544,8 @@ const FIELD_HELP: Record<string, string> = {
     "Extra paths to include in memory search (directories or .md files; relative paths resolved from workspace).",
   "agents.defaults.memorySearch.experimental.sessionMemory":
     "Enable experimental session transcript indexing for memory search (default: false).",
-  "agents.defaults.memorySearch.provider": 'Embedding provider ("openai", "gemini", or "local").',
+  "agents.defaults.memorySearch.provider":
+    'Embedding provider ("openai", "gemini", "local", or "openrouter").',
   "agents.defaults.memorySearch.remote.baseUrl":
     "Custom base URL for remote embeddings (OpenAI-compatible proxies or Gemini overrides).",
   "agents.defaults.memorySearch.remote.apiKey": "Custom API key for the remote embedding provider.",
@@ -608,6 +612,11 @@ const FIELD_HELP: Record<string, string> = {
   "memory.qmd.limits.timeoutMs": "Per-query timeout for QMD searches (default: 4000).",
   "memory.qmd.scope":
     "Session/channel scope for QMD recall (same syntax as session.sendPolicy; default: direct-only).",
+  "memory.neuroMemory":
+    "Neuro-memory integration for episodic memory with Bayesian surprise detection.",
+  "memory.neuroMemory.enabled": "Enable neuro-memory-agent integration (default: false).",
+  "memory.neuroMemory.agentPath":
+    "Path to neuro-memory-agent installation (default: ~/Desktop/neuro-memory-agent).",
   "agents.defaults.memorySearch.cache.maxEntries":
     "Optional cap on cached embeddings (best-effort).",
   "agents.defaults.memorySearch.sync.onSearch":

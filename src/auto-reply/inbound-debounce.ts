@@ -1,5 +1,6 @@
 import type { OpenClawConfig } from "../config/config.js";
 import type { InboundDebounceByProvider } from "../config/types.messages.js";
+import { scheduleTimeout, cancelTimeout } from "../agents/timer-wheel.js";
 
 const resolveMs = (value: unknown): number | undefined => {
   if (typeof value !== "number" || !Number.isFinite(value)) {
@@ -35,8 +36,10 @@ export function resolveInboundDebounceMs(params: {
 
 type DebounceBuffer<T> = {
   items: T[];
-  timeout: ReturnType<typeof setTimeout> | null;
+  timerActive: boolean;
 };
+
+let debouncerCounter = 0;
 
 export function createInboundDebouncer<T>(params: {
   debounceMs: number;
@@ -45,14 +48,17 @@ export function createInboundDebouncer<T>(params: {
   onFlush: (items: T[]) => Promise<void>;
   onError?: (err: unknown, items: T[]) => void;
 }) {
+  const debouncerId = ++debouncerCounter;
   const buffers = new Map<string, DebounceBuffer<T>>();
   const debounceMs = Math.max(0, Math.trunc(params.debounceMs));
 
+  const makeTimerId = (key: string) => `inbound-debounce-${debouncerId}-${key}`;
+
   const flushBuffer = async (key: string, buffer: DebounceBuffer<T>) => {
     buffers.delete(key);
-    if (buffer.timeout) {
-      clearTimeout(buffer.timeout);
-      buffer.timeout = null;
+    if (buffer.timerActive) {
+      cancelTimeout(makeTimerId(key));
+      buffer.timerActive = false;
     }
     if (buffer.items.length === 0) {
       return;
@@ -73,13 +79,15 @@ export function createInboundDebouncer<T>(params: {
   };
 
   const scheduleFlush = (key: string, buffer: DebounceBuffer<T>) => {
-    if (buffer.timeout) {
-      clearTimeout(buffer.timeout);
+    const timerId = makeTimerId(key);
+    if (buffer.timerActive) {
+      cancelTimeout(timerId);
     }
-    buffer.timeout = setTimeout(() => {
+    buffer.timerActive = true;
+    scheduleTimeout(timerId, debounceMs, () => {
+      buffer.timerActive = false;
       void flushBuffer(key, buffer);
-    }, debounceMs);
-    buffer.timeout.unref?.();
+    });
   };
 
   const enqueue = async (item: T) => {
@@ -101,7 +109,7 @@ export function createInboundDebouncer<T>(params: {
       return;
     }
 
-    const buffer: DebounceBuffer<T> = { items: [item], timeout: null };
+    const buffer: DebounceBuffer<T> = { items: [item], timerActive: false };
     buffers.set(key, buffer);
     scheduleFlush(key, buffer);
   };

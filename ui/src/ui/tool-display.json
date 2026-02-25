@@ -231,6 +231,84 @@
         "memberInfo": { "label": "member", "detailKeys": ["userId"] },
         "emojiList": { "label": "emoji list" }
       }
+    },
+    "task": {
+      "icon": "terminal",
+      "title": "Task",
+      "label": "Background Task",
+      "detailKeys": ["command", "description", "cwd", "timeout"]
+    },
+    "task_get": {
+      "icon": "terminal",
+      "title": "Get Task",
+      "label": "Get Task Status",
+      "detailKeys": ["taskId"]
+    },
+    "task_list": {
+      "icon": "list",
+      "title": "List Tasks",
+      "label": "List Tasks",
+      "detailKeys": ["status", "owner"]
+    },
+    "task_cancel": {
+      "icon": "square",
+      "title": "Cancel Task",
+      "label": "Cancel Task",
+      "detailKeys": ["taskId"]
+    },
+    "task_update": {
+      "icon": "edit",
+      "title": "Update Task",
+      "label": "Update Task",
+      "detailKeys": ["taskId", "status", "owner", "description"]
+    },
+    "task_output": {
+      "icon": "terminal",
+      "title": "Task Output",
+      "label": "Get Task Output",
+      "detailKeys": ["taskId", "since"]
+    },
+    "glob": {
+      "icon": "search",
+      "title": "Glob",
+      "label": "Find Files",
+      "detailKeys": ["pattern", "path", "limit"]
+    },
+    "grep": {
+      "icon": "search",
+      "title": "Grep",
+      "label": "Search",
+      "detailKeys": ["pattern", "path", "glob", "output_mode"]
+    },
+    "web_fetch": {
+      "icon": "globe",
+      "title": "Web Fetch",
+      "label": "Fetch URL",
+      "detailKeys": ["url", "extractMode", "maxChars"]
+    },
+    "web_search": {
+      "icon": "search",
+      "title": "Web Search",
+      "label": "Search Web",
+      "detailKeys": ["query", "maxResults", "provider"]
+    },
+    "notebook_read": {
+      "icon": "book",
+      "title": "Notebook Read",
+      "label": "Read Notebook",
+      "detailKeys": ["path", "format", "includeOutputs"]
+    },
+    "notebook_edit": {
+      "icon": "edit",
+      "title": "Notebook Edit",
+      "label": "Edit Notebook",
+      "detailKeys": ["path", "operations"]
+    },
+    "notebook_cell_info": {
+      "icon": "info",
+      "title": "Notebook Cell Info",
+      "label": "Cell Info",
+      "detailKeys": ["path"]
     }
   }
 }

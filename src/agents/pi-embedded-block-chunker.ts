@@ -7,6 +7,8 @@ export type BlockReplyChunking = {
   breakPreference?: "paragraph" | "newline" | "sentence";
   /** When true, flush eagerly on \n\n paragraph boundaries regardless of minChars. */
   flushOnParagraph?: boolean;
+  /** When true, also break before markdown headers (# Title) and list items (- item). */
+  breakOnMarkdownStructures?: boolean;
 };
 
 type FenceSplit = {
@@ -108,7 +110,21 @@ export class EmbeddedBlockChunker {
     while (this.#buffer.length > 0) {
       const fenceSpans = parseFenceSpans(this.#buffer);
       const paragraphBreak = findNextParagraphBreak(this.#buffer, fenceSpans);
-      if (!paragraphBreak || paragraphBreak.index > maxChars) {
+
+      // Also check for markdown structure breaks (headers, list items) if enabled.
+      const structureBreak = this.#chunking.breakOnMarkdownStructures
+        ? findNextMarkdownStructureBreak(this.#buffer, fenceSpans)
+        : null;
+
+      // Pick the earliest break between paragraph and structure.
+      let breakToUse: ParagraphBreak | null = null;
+      if (paragraphBreak && structureBreak) {
+        breakToUse = paragraphBreak.index <= structureBreak.index ? paragraphBreak : structureBreak;
+      } else {
+        breakToUse = paragraphBreak ?? structureBreak;
+      }
+
+      if (!breakToUse || breakToUse.index > maxChars) {
         // No paragraph boundary yet (or the next boundary is too far). If the
         // buffer exceeds maxChars, fall back to normal break logic to avoid
         // oversized chunks or unbounded accumulation.
@@ -122,13 +138,11 @@ export class EmbeddedBlockChunker {
         return;
       }
 
-      const chunk = this.#buffer.slice(0, paragraphBreak.index);
+      const chunk = this.#buffer.slice(0, breakToUse.index);
       if (chunk.trim().length > 0) {
         emit(chunk);
       }
-      this.#buffer = stripLeadingNewlines(
-        this.#buffer.slice(paragraphBreak.index + paragraphBreak.length),
-      );
+      this.#buffer = stripLeadingNewlines(this.#buffer.slice(breakToUse.index + breakToUse.length));
     }
   }
 
@@ -347,6 +361,32 @@ function findNextParagraphBreak(
       continue;
     }
     return { index, length: match[0].length };
+  }
+  return null;
+}
+
+/** Matches markdown headers (# Title) or list items (- item, * item, N. item) at line start. */
+const MARKDOWN_STRUCTURE_RE = /\n(?=#{1,6}\s|[-*+]\s|\d+\.\s)/g;
+
+function findNextMarkdownStructureBreak(
+  buffer: string,
+  fenceSpans: FenceSpan[],
+  startIndex = 0,
+): ParagraphBreak | null {
+  if (startIndex < 0) {
+    return null;
+  }
+  MARKDOWN_STRUCTURE_RE.lastIndex = startIndex;
+  let match: RegExpExecArray | null;
+  while ((match = MARKDOWN_STRUCTURE_RE.exec(buffer)) !== null) {
+    const index = match.index ?? -1;
+    if (index < 0) {
+      continue;
+    }
+    if (!isSafeFenceBreak(fenceSpans, index)) {
+      continue;
+    }
+    return { index, length: 1 };
   }
   return null;
 }

@@ -144,6 +144,16 @@ export function isRecoverableTelegramNetworkError(
         return true;
       }
     }
+
+    // Grammy's HttpError uses a fixed message format "Network request for '<method>' failed!"
+    // when the HTTP request never reached Telegram's servers. This is always safe to retry
+    // (no partial delivery risk) even in send context where general message matching is off.
+    if (getErrorName(candidate) === "HttpError") {
+      const message = formatErrorMessage(candidate).toLowerCase();
+      if (message.includes("network request for") && message.includes("failed")) {
+        return true;
+      }
+    }
   }
 
   return false;

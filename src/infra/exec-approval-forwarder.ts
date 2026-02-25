@@ -4,6 +4,7 @@ import type {
   ExecApprovalForwardTarget,
 } from "../config/types.approvals.js";
 import type { ExecApprovalDecision } from "./exec-approvals.js";
+import { scheduleTimeout, cancelTimeout } from "../agents/timer-wheel.js";
 import { loadConfig } from "../config/config.js";
 import { loadSessionStore, resolveStorePath } from "../config/sessions.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
@@ -42,7 +43,7 @@ type ForwardTarget = ExecApprovalForwardTarget & { source: "session" | "target" 
 type PendingApproval = {
   request: ExecApprovalRequest;
   targets: ForwardTarget[];
-  timeoutId: NodeJS.Timeout | null;
+  timerId: string | null;
 };
 
 export type ExecApprovalForwarder = {
@@ -269,7 +270,8 @@ export function createExecApprovalForwarder(
     }
 
     const expiresInMs = Math.max(0, request.expiresAtMs - nowMs());
-    const timeoutId = setTimeout(() => {
+    const timerId = `exec-approval-fwd-${request.id}`;
+    scheduleTimeout(timerId, expiresInMs, () => {
       void (async () => {
         const entry = pending.get(request.id);
         if (!entry) {
@@ -279,10 +281,9 @@ export function createExecApprovalForwarder(
         const expiredText = buildExpiredMessage(request);
         await deliverToTargets({ cfg, targets: entry.targets, text: expiredText, deliver });
       })();
-    }, expiresInMs);
-    timeoutId.unref?.();
+    });
 
-    const pendingEntry: PendingApproval = { request, targets, timeoutId };
+    const pendingEntry: PendingApproval = { request, targets, timerId };
     pending.set(request.id, pendingEntry);
 
     if (pending.get(request.id) !== pendingEntry) {
@@ -304,8 +305,8 @@ export function createExecApprovalForwarder(
     if (!entry) {
       return;
     }
-    if (entry.timeoutId) {
-      clearTimeout(entry.timeoutId);
+    if (entry.timerId) {
+      cancelTimeout(entry.timerId);
     }
     pending.delete(resolved.id);
 
@@ -316,8 +317,8 @@ export function createExecApprovalForwarder(
 
   const stop = () => {
     for (const entry of pending.values()) {
-      if (entry.timeoutId) {
-        clearTimeout(entry.timeoutId);
+      if (entry.timerId) {
+        cancelTimeout(entry.timerId);
       }
     }
     pending.clear();

@@ -78,11 +78,23 @@ const MemoryQmdSchema = z
   })
   .strict();
 
+const NeuroMemorySchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    agentPath: z.string().optional(),
+    // Event types to store in neuro-memory (default: all except noisy ones)
+    memorableTypes: z.array(z.string()).optional(),
+    // Minimum surprise threshold to store (0-1, default: 0.0 = store all)
+    surpriseThreshold: z.number().min(0).max(1).optional(),
+  })
+  .strict();
+
 const MemorySchema = z
   .object({
     backend: z.union([z.literal("builtin"), z.literal("qmd")]).optional(),
     citations: z.union([z.literal("auto"), z.literal("on"), z.literal("off")]).optional(),
     qmd: MemoryQmdSchema.optional(),
+    neuroMemory: NeuroMemorySchema.optional(),
   })
   .strict()
   .optional();

@@ -12,6 +12,7 @@ import {
 } from "../agents/agent-scope.js";
 import { resolveUserTimezone } from "../agents/date-time.js";
 import { resolveEffectiveMessagesConfig } from "../agents/identity.js";
+import { scheduleTimeout, cancelTimeout } from "../agents/timer-wheel.js";
 import { DEFAULT_HEARTBEAT_FILENAME } from "../agents/workspace.js";
 import {
   DEFAULT_HEARTBEAT_ACK_MAX_CHARS,
@@ -848,11 +849,12 @@ export function startHeartbeatRunner(opts: {
 }): HeartbeatRunner {
   const runtime = opts.runtime ?? defaultRuntime;
   const runOnce = opts.runOnce ?? runHeartbeatOnce;
+  const HEARTBEAT_RUNNER_TIMER_ID = "heartbeat-runner";
   const state = {
     cfg: opts.cfg ?? loadConfig(),
     runtime,
     agents: new Map<string, HeartbeatAgentState>(),
-    timer: null as NodeJS.Timeout | null,
+    timerActive: false,
     stopped: false,
   };
   let initialized = false;
@@ -871,9 +873,9 @@ export function startHeartbeatRunner(opts: {
     if (state.stopped) {
       return;
     }
-    if (state.timer) {
-      clearTimeout(state.timer);
-      state.timer = null;
+    if (state.timerActive) {
+      cancelTimeout(HEARTBEAT_RUNNER_TIMER_ID);
+      state.timerActive = false;
     }
     if (state.agents.size === 0) {
       return;
@@ -889,10 +891,11 @@ export function startHeartbeatRunner(opts: {
       return;
     }
     const delay = Math.max(0, nextDue - now);
-    state.timer = setTimeout(() => {
+    state.timerActive = true;
+    scheduleTimeout(HEARTBEAT_RUNNER_TIMER_ID, delay, () => {
+      state.timerActive = false;
       requestHeartbeatNow({ reason: "interval", coalesceMs: 0 });
-    }, delay);
-    state.timer.unref?.();
+    });
   };
 
   const updateConfig = (cfg: OpenClawConfig) => {
@@ -999,10 +1002,10 @@ export function startHeartbeatRunner(opts: {
   const cleanup = () => {
     state.stopped = true;
     setHeartbeatWakeHandler(null);
-    if (state.timer) {
-      clearTimeout(state.timer);
+    if (state.timerActive) {
+      cancelTimeout(HEARTBEAT_RUNNER_TIMER_ID);
+      state.timerActive = false;
     }
-    state.timer = null;
   };
 
   opts.abortSignal?.addEventListener("abort", cleanup, { once: true });

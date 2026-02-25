@@ -10,7 +10,11 @@ import {
   type ExecSecurity,
   type ExecApprovalsFile,
   addAllowlistEntry,
+  analyzeShellCommand,
+  checkImmediateDeny,
   evaluateShellAllowlist,
+  isSafeBinUsage,
+  matchAllowlist,
   maxAsk,
   minSecurity,
   requiresExecApproval,
@@ -19,6 +23,12 @@ import {
   resolveExecApprovals,
   resolveExecApprovalsFromFile,
 } from "../infra/exec-approvals.js";
+import {
+  type ExecAuditEntry,
+  type SecurityDecision,
+  createAuditEntry,
+  writeAuditEntry,
+} from "../infra/exec-audit.js";
 import { requestHeartbeatNow } from "../infra/heartbeat-wake.js";
 import { buildNodeShellCommand } from "../infra/node-shell.js";
 import {
@@ -51,8 +61,10 @@ import {
   resolveWorkdir,
   truncateMiddle,
 } from "./bash-tools.shared.js";
+import { killTree } from "./kill-tree.js";
 import { buildCursorPositionResponse, stripDsrRequests } from "./pty-dsr.js";
 import { getShellConfig, sanitizeBinaryOutput } from "./shell-utils.js";
+import { scheduleTimeout, cancelTimeout } from "./timer-wheel.js";
 import { callGatewayTool } from "./tools/gateway.js";
 import { listNodes, resolveNodeIdFromList } from "./tools/nodes-utils.js";
 
@@ -77,6 +89,25 @@ const DANGEROUS_HOST_ENV_VARS = new Set([
   "SSLKEYLOGFILE",
 ]);
 const DANGEROUS_HOST_ENV_PREFIXES = ["DYLD_", "LD_"];
+
+// NEW: Obfuscation detection patterns (from Claude Code)
+const OBFUSCATION_PATTERNS = [
+  /\$'[^']*'/, // ANSI-C quoting
+  /\$"[^"]*"/, // Locale quoting
+  /''[^']*''/, // Empty quote concatenation
+  /\b[a-zA-Z_][a-zA-Z0-9_]*\s*=\s*['"][^'"]*['"]\s*;\s*\$?\1\b/, // Variable reuse tricks
+];
+
+// NEW: Detect command obfuscation attempts
+function detectObfuscation(command: string): boolean {
+  return OBFUSCATION_PATTERNS.some((p) => p.test(command));
+}
+
+// NEW: Network restriction types for sandbox
+export type NetworkRestrictions = {
+  allowedHosts?: string[];
+  deniedHosts?: string[];
+};
 
 // Centralized sanitization helper.
 // Throws an error if dangerous variables or PATH modifications are detected on the host.
@@ -105,6 +136,44 @@ function validateHostEnv(env: Record<string, string>): void {
     }
   }
 }
+
+// NEW: Check network restrictions for sandbox
+function checkNetworkRestrictions(
+  command: string,
+  network?: NetworkRestrictions,
+): { allowed: boolean; reason?: string } {
+  if (!network) {
+    return { allowed: true };
+  }
+
+  // Extract hosts from command (basic parsing)
+  const hostPattern =
+    /\b(?:https?:\/\/)?(?:[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}|localhost|127\.0\.0\.1|\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(?::\d+)?\b/g;
+  const hosts = command.match(hostPattern) || [];
+
+  for (const host of hosts) {
+    const hostname = host.replace(/^https?:\/\//, "").replace(/:\d+$/, "");
+
+    // Check denied hosts first
+    if (
+      network.deniedHosts?.some((denied) => hostname === denied || hostname.endsWith("." + denied))
+    ) {
+      return { allowed: false, reason: `Host '${hostname}' is in denied hosts list` };
+    }
+
+    // If allowedHosts specified, host must be in list
+    if (
+      network.allowedHosts?.length &&
+      !network.allowedHosts.some(
+        (allowed) => hostname === allowed || hostname.endsWith("." + allowed),
+      )
+    ) {
+      return { allowed: false, reason: `Host '${hostname}' is not in allowed hosts list` };
+    }
+  }
+
+  return { allowed: true };
+}
 const DEFAULT_MAX_OUTPUT = clampNumber(
   readEnvInt("PI_BASH_MAX_OUTPUT_CHARS"),
   200_000,
@@ -124,6 +193,46 @@ const DEFAULT_APPROVAL_TIMEOUT_MS = 120_000;
 const DEFAULT_APPROVAL_REQUEST_TIMEOUT_MS = 130_000;
 const DEFAULT_APPROVAL_RUNNING_NOTICE_MS = 10_000;
 const APPROVAL_SLUG_LENGTH = 8;
+
+// NEW: Large output persistence threshold (from Claude Code)
+const LARGE_OUTPUT_THRESHOLD = 30_000;
+
+// NEW: Image output detection pattern (from Claude Code)
+const IMAGE_OUTPUT_PATTERN = /^data:image\/(png|jpeg|gif|webp);base64,/;
+
+// NEW: Write large output to temp file
+async function persistLargeOutput(output: string): Promise<{ outputPath: string; size: number }> {
+  const fs = await import("node:fs/promises");
+  const os = await import("node:os");
+  const path = await import("node:path");
+
+  const tempDir = process.env.TMPDIR || os.tmpdir();
+  const tempPath = path.join(tempDir, `openclaw-exec-output-${Date.now()}-${process.pid}.txt`);
+
+  await fs.writeFile(tempPath, output, "utf-8");
+  const stats = await fs.stat(tempPath);
+
+  return { outputPath: tempPath, size: stats.size };
+}
+
+// NEW: Detect and extract image data from output
+function detectImageOutput(
+  output: string,
+): { imageData?: string; imageType?: string; cleanedOutput: string } | null {
+  const match = output.match(IMAGE_OUTPUT_PATTERN);
+  if (!match) {
+    return null;
+  }
+
+  const imageType = match[1];
+  const imageData = output.replace(IMAGE_OUTPUT_PATTERN, "").trim();
+
+  return {
+    imageData,
+    imageType,
+    cleanedOutput: output.replace(IMAGE_OUTPUT_PATTERN, "[Image data removed - see image field]"),
+  };
+}
 
 type PtyExitEvent = { exitCode: number; signal?: number };
 type PtyListener<T> = (event: T) => void;
@@ -238,6 +347,12 @@ const execSchema = Type.Object({
       description: "Node id/name for host=node.",
     }),
   ),
+  dryRun: Type.Optional(
+    Type.Boolean({
+      description:
+        "Analyze command without executing. Shows security decision, risk indicators, and suggestions.",
+    }),
+  ),
 });
 
 export type ExecToolDetails =
@@ -265,6 +380,25 @@ export type ExecToolDetails =
       command: string;
       cwd?: string;
       nodeId?: string;
+    }
+  | {
+      status: "dry-run";
+      wouldExecute: boolean;
+      verdict: "would-allow" | "would-deny" | "would-prompt";
+      verdictReason: string;
+      host: ExecHost;
+      security: ExecSecurity;
+      ask: ExecAsk;
+      segments: Array<{
+        raw: string;
+        executable?: string;
+        resolvedPath?: string;
+        allowlistMatch?: string;
+        safeBinMatch: boolean;
+      }>;
+      riskIndicators: string[];
+      suggestions: string[];
+      cwd?: string;
     };
 
 function normalizeExecHost(value?: string | null): ExecHost | null {
@@ -599,8 +733,9 @@ async function runExecProcess(opts: {
   addSession(session);
 
   let settled = false;
-  let timeoutTimer: NodeJS.Timeout | null = null;
-  let timeoutFinalizeTimer: NodeJS.Timeout | null = null;
+  // Use timer wheel for O(1) timeout management instead of individual setTimeout per session
+  const timeoutTimerId = `exec:${sessionId}:timeout`;
+  const timeoutFinalizeTimerId = `exec:${sessionId}:finalize`;
   let timedOut = false;
   const timeoutFinalizeMs = 1000;
   let resolveFn: ((outcome: ExecProcessOutcome) => void) | null = null;
@@ -634,18 +769,31 @@ async function runExecProcess(opts: {
 
   const onTimeout = () => {
     timedOut = true;
-    killSession(session);
-    if (!timeoutFinalizeTimer) {
-      timeoutFinalizeTimer = setTimeout(() => {
+    const pid = session.pid ?? session.child?.pid;
+    if (pid) {
+      // Use optimized kill-tree with graceful shutdown:
+      // 1. Send SIGTERM first
+      // 2. Poll during grace period for early exit (reduces wait time)
+      // 3. Escalate to SIGKILL if needed
+      // 4. Use process group killing when available
+      void killTree(pid, {
+        signal: "SIGTERM",
+        gracePeriodMs: 500,
+        pollIntervalMs: 50,
+        useProcessGroup: true,
+      }).finally(() => {
+        // Finalize after kill completes (whether success or not)
         finalizeTimeout();
-      }, timeoutFinalizeMs);
+      });
+    } else {
+      // No PID available, just finalize
+      finalizeTimeout();
     }
   };
 
+  // Use timer wheel for centralized timeout management (O(1) insertion)
   if (opts.timeoutSec > 0) {
-    timeoutTimer = setTimeout(() => {
-      onTimeout();
-    }, opts.timeoutSec * 1000);
+    scheduleTimeout(timeoutTimerId, opts.timeoutSec * 1000, onTimeout);
   }
 
   const emitUpdate = () => {
@@ -703,12 +851,9 @@ async function runExecProcess(opts: {
   const promise = new Promise<ExecProcessOutcome>((resolve) => {
     resolveFn = resolve;
     const handleExit = (code: number | null, exitSignal: NodeJS.Signals | number | null) => {
-      if (timeoutTimer) {
-        clearTimeout(timeoutTimer);
-      }
-      if (timeoutFinalizeTimer) {
-        clearTimeout(timeoutFinalizeTimer);
-      }
+      // Cancel timer wheel entries (O(1) cancellation)
+      cancelTimeout(timeoutTimerId);
+      cancelTimeout(timeoutFinalizeTimerId);
       const durationMs = Date.now() - startedAt;
       const wasSignal = exitSignal != null;
       const isSuccess = code === 0 && !wasSignal && !timedOut;
@@ -765,12 +910,9 @@ async function runExecProcess(opts: {
       });
 
       child.once("error", (err) => {
-        if (timeoutTimer) {
-          clearTimeout(timeoutTimer);
-        }
-        if (timeoutFinalizeTimer) {
-          clearTimeout(timeoutFinalizeTimer);
-        }
+        // Cancel timer wheel entries (O(1) cancellation)
+        cancelTimeout(timeoutTimerId);
+        cancelTimeout(timeoutFinalizeTimerId);
         markExited(session, null, null, "failed");
         maybeNotifyOnExit(session, "failed");
         const aggregated = session.aggregated.trim();
@@ -794,6 +936,272 @@ async function runExecProcess(opts: {
     pid: session.pid ?? undefined,
     promise,
     kill: () => killSession(session),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Dry-Run Mode Implementation
+// ─────────────────────────────────────────────────────────────────────────────
+
+type DryRunOpts = {
+  command: string;
+  workdir: string;
+  env?: Record<string, string>;
+  configuredHost: ExecHost;
+  requestedHost: ExecHost | null;
+  configuredSecurity?: ExecSecurity;
+  requestedSecurity: ExecSecurity | null;
+  configuredAsk: ExecAsk;
+  requestedAsk: ExecAsk | null;
+  elevatedRequested: boolean;
+  elevatedAllowed: boolean;
+  elevatedMode: string;
+  safeBins: Set<string>;
+  agentId?: string;
+  sandbox?: BashSandboxConfig;
+};
+
+function analyzeRiskIndicators(command: string): string[] {
+  const indicators: string[] = [];
+
+  if (/\brm\s+-[a-z]*r/i.test(command)) indicators.push("RECURSIVE_DELETE");
+  if (/>\s*\//.test(command)) indicators.push("ROOT_FILE_WRITE");
+  if (/\b(curl|wget)\b/.test(command)) indicators.push("NETWORK_DOWNLOAD");
+  if (/\|\s*(sh|bash|zsh)\b/.test(command)) indicators.push("PIPE_TO_SHELL");
+  if (/\b(sudo|su)\s/.test(command)) indicators.push("PRIVILEGE_ESCALATION");
+  if (/\bchmod\s+[0-7]*7/.test(command)) indicators.push("WORLD_WRITABLE");
+  if (/\beval\s/.test(command)) indicators.push("EVAL_EXECUTION");
+  if (/\$\(|\`/.test(command)) indicators.push("COMMAND_SUBSTITUTION");
+  if (/>\s*\/dev\//.test(command)) indicators.push("DEVICE_WRITE");
+  if (/\b(mkfs|dd)\s/.test(command)) indicators.push("DISK_OPERATION");
+  if (/\bkill\s+-9/.test(command)) indicators.push("FORCE_KILL");
+  if (/\b(reboot|shutdown|halt|poweroff)\b/.test(command)) indicators.push("SYSTEM_CONTROL");
+  if (/\/etc\/(passwd|shadow|sudoers)/.test(command)) indicators.push("SENSITIVE_FILE_ACCESS");
+  if (/\bchown\b/.test(command)) indicators.push("OWNERSHIP_CHANGE");
+  if (/\bnc\s/.test(command) || /\bnetcat\b/.test(command)) indicators.push("NETCAT_USAGE");
+
+  return indicators;
+}
+
+function generateDryRunSuggestions(
+  segments: Array<{
+    raw: string;
+    resolvedPath?: string;
+    allowlistMatch?: string;
+    safeBinMatch: boolean;
+  }>,
+  riskIndicators: string[],
+): string[] {
+  const suggestions: string[] = [];
+
+  for (const segment of segments) {
+    if (!segment.allowlistMatch && !segment.safeBinMatch && segment.resolvedPath) {
+      suggestions.push(`Add pattern "${segment.resolvedPath}" to allowlist`);
+    }
+  }
+
+  if (riskIndicators.includes("PIPE_TO_SHELL")) {
+    suggestions.push("Consider: Piping to shell executes arbitrary code");
+  }
+  if (riskIndicators.includes("NETWORK_DOWNLOAD")) {
+    suggestions.push("Consider: Downloads may contain malicious content");
+  }
+  if (riskIndicators.includes("COMMAND_SUBSTITUTION")) {
+    suggestions.push("Consider: Command substitution executes nested commands");
+  }
+  if (riskIndicators.includes("RECURSIVE_DELETE")) {
+    suggestions.push("Consider: Recursive delete can cause data loss");
+  }
+
+  return suggestions;
+}
+
+async function executeDryRun(opts: DryRunOpts): Promise<AgentToolResult<ExecToolDetails>> {
+  const lines: string[] = [
+    "\u2500".repeat(60),
+    "DRY RUN - No execution will occur",
+    "\u2500".repeat(60),
+    "",
+  ];
+
+  // Resolve effective security settings
+  const host = opts.elevatedRequested ? "gateway" : (opts.requestedHost ?? opts.configuredHost);
+  const defaultSecurity = host === "sandbox" ? "deny" : "allowlist";
+  const configuredSecurity = opts.configuredSecurity ?? defaultSecurity;
+  const security =
+    opts.elevatedRequested && opts.elevatedMode === "full"
+      ? "full"
+      : minSecurity(configuredSecurity, opts.requestedSecurity ?? configuredSecurity);
+  const ask = maxAsk(opts.configuredAsk, opts.requestedAsk ?? opts.configuredAsk);
+
+  lines.push(`Command: ${opts.command}`);
+  lines.push(`Host: ${host}`);
+  lines.push(`Security: ${security}`);
+  lines.push(`Ask: ${ask}`);
+  lines.push("");
+
+  const segments: Array<{
+    raw: string;
+    executable?: string;
+    resolvedPath?: string;
+    allowlistMatch?: string;
+    safeBinMatch: boolean;
+  }> = [];
+
+  let verdict: "would-allow" | "would-deny" | "would-prompt" = "would-deny";
+  let verdictReason = "";
+  let wouldExecute = false;
+
+  // Check immediate deny patterns first
+  const denyCheck = checkImmediateDeny(opts.command);
+  if (denyCheck.denied) {
+    verdict = "would-deny";
+    verdictReason = `Blocked pattern: ${denyCheck.reason}`;
+    lines.push(`Parser: BLOCKED - ${denyCheck.reason}`);
+    lines.push("");
+  } else if (security === "deny") {
+    verdict = "would-deny";
+    verdictReason = 'Security mode is "deny" - all execution blocked';
+    lines.push("Security mode: deny (all commands blocked)");
+    lines.push("");
+  } else {
+    // NEW: Check for obfuscation attempts (from Claude Code)
+    if (detectObfuscation(opts.command)) {
+      verdict = "would-deny";
+      verdictReason = "Obfuscation detected - command uses shell quoting tricks to evade filters";
+      lines.push("Obfuscation: DETECTED - command uses shell quoting tricks");
+      lines.push("");
+    } else if (security === "full") {
+      wouldExecute = true;
+      verdict = "would-allow";
+      verdictReason = 'Security mode is "full" - no restrictions';
+      lines.push("Security mode: full (all commands allowed)");
+      lines.push("");
+    } else {
+      // Allowlist mode - analyze command
+      const analysis = analyzeShellCommand({
+        command: opts.command,
+        cwd: opts.workdir,
+        env: opts.env,
+        skipImmediateDeny: true, // Already checked above
+      });
+
+      if (!analysis.ok) {
+        verdict = "would-deny";
+        verdictReason = `Parser rejected: ${analysis.reason}`;
+        lines.push(`Parser: FAILED - ${analysis.reason}`);
+      } else {
+        lines.push("Segments:");
+
+        // Get approvals for allowlist checking
+        const approvals = resolveExecApprovals(opts.agentId, { security, ask });
+
+        for (const segment of analysis.segments) {
+          const match = matchAllowlist(approvals.allowlist, segment.resolution);
+          const safeBin = isSafeBinUsage({
+            argv: segment.argv,
+            resolution: segment.resolution,
+            safeBins: opts.safeBins,
+            cwd: opts.workdir,
+          });
+
+          const segmentResult = {
+            raw: segment.raw,
+            executable: segment.resolution?.rawExecutable,
+            resolvedPath: segment.resolution?.resolvedPath,
+            allowlistMatch: match?.pattern,
+            safeBinMatch: safeBin,
+          };
+          segments.push(segmentResult);
+
+          const status = match
+            ? "\u2713 allowlist"
+            : safeBin
+              ? "\u2713 safe-bin"
+              : "\u2717 no match";
+          lines.push(`  ${segment.raw}`);
+          lines.push(
+            `    Executable: ${segment.resolution?.resolvedPath || segment.resolution?.rawExecutable || "unknown"}`,
+          );
+          lines.push(`    Status: ${status}`);
+          if (match) {
+            lines.push(`    Pattern: ${match.pattern}`);
+          }
+        }
+
+        const allSatisfied = segments.every((s) => s.allowlistMatch || s.safeBinMatch);
+
+        if (allSatisfied) {
+          wouldExecute = true;
+          verdict = "would-allow";
+          verdictReason = "All segments match allowlist or safe bins";
+        } else if (ask === "off") {
+          verdict = "would-deny";
+          verdictReason = "Allowlist miss and ask=off";
+        } else {
+          verdict = "would-prompt";
+          verdictReason = `Allowlist miss - would prompt (ask=${ask})`;
+        }
+      }
+    }
+  }
+
+  lines.push("");
+  lines.push(`Verdict: ${verdict.toUpperCase()}`);
+  lines.push(`Reason: ${verdictReason}`);
+
+  const riskIndicators = analyzeRiskIndicators(opts.command);
+  if (riskIndicators.length > 0) {
+    lines.push("");
+    lines.push("Risk indicators:");
+    for (const ind of riskIndicators) {
+      lines.push(`  - ${ind}`);
+    }
+  }
+
+  const suggestions = generateDryRunSuggestions(segments, riskIndicators);
+  if (suggestions.length > 0) {
+    lines.push("");
+    lines.push("Suggestions:");
+    for (const sug of suggestions) {
+      lines.push(`  - ${sug}`);
+    }
+  }
+
+  // Write audit entry for dry-run
+  const auditEntry = createAuditEntry({
+    command: opts.command,
+    cwd: opts.workdir,
+    host,
+    security,
+    ask,
+    agentId: opts.agentId,
+    env: opts.env,
+  });
+  auditEntry.decision = "dry-run";
+  auditEntry.decisionChain.push({
+    type: "security-resolution",
+    configured: configuredSecurity,
+    requested: opts.requestedSecurity ?? undefined,
+    effective: security,
+  });
+  writeAuditEntry(auditEntry);
+
+  return {
+    content: [{ type: "text", text: lines.join("\n") }],
+    details: {
+      status: "dry-run",
+      wouldExecute,
+      verdict,
+      verdictReason,
+      host,
+      security,
+      ask,
+      segments,
+      riskIndicators,
+      suggestions,
+      cwd: opts.workdir,
+    },
   };
 }
 
@@ -843,10 +1251,34 @@ export function createExecTool(
         security?: string;
         ask?: string;
         node?: string;
+        dryRun?: boolean;
       };
 
       if (!params.command) {
         throw new Error("Provide a command to start.");
+      }
+
+      // ─────────────────────────────────────────────────────────────────────
+      // Dry-Run Mode: Analyze without executing
+      // ─────────────────────────────────────────────────────────────────────
+      if (params.dryRun === true) {
+        return executeDryRun({
+          command: params.command,
+          workdir: params.workdir?.trim() || defaults?.cwd || process.cwd(),
+          env: params.env,
+          configuredHost: defaults?.host ?? "sandbox",
+          requestedHost: normalizeExecHost(params.host),
+          configuredSecurity: defaults?.security,
+          requestedSecurity: normalizeExecSecurity(params.security),
+          configuredAsk: defaults?.ask ?? "on-miss",
+          requestedAsk: normalizeExecAsk(params.ask),
+          elevatedRequested: params.elevated === true,
+          elevatedAllowed: Boolean(defaults?.elevated?.enabled && defaults?.elevated?.allowed),
+          elevatedMode: defaults?.elevated?.defaultLevel ?? "off",
+          safeBins,
+          agentId,
+          sandbox: defaults?.sandbox,
+        });
       }
 
       const maxOutput = DEFAULT_MAX_OUTPUT;
@@ -982,6 +1414,42 @@ export function createExecTool(
             containerWorkdir: containerWorkdir ?? sandbox.containerWorkdir,
           })
         : mergedEnv;
+
+      // NEW: Check network restrictions for sandbox (from Claude Code)
+      if (sandbox?.network) {
+        const networkCheck = checkNetworkRestrictions(params.command, sandbox.network);
+        if (!networkCheck.allowed) {
+          throw new Error(`exec network denied: ${networkCheck.reason}`);
+        }
+      }
+
+      // NEW: Auto-allow sandboxed commands (from Claude Code)
+      // When running in sandbox mode with allowlist security, auto-allow safe commands
+      const autoAllowSandboxed = host === "sandbox" && security === "allowlist";
+      if (autoAllowSandboxed) {
+        // For sandboxed commands, relax the ask requirement for safe binaries
+        const analysis = analyzeShellCommand({
+          command: params.command,
+          cwd: workdir,
+          env,
+          skipImmediateDeny: false,
+        });
+
+        if (
+          analysis.ok &&
+          analysis.segments.every((seg) =>
+            isSafeBinUsage({
+              argv: seg.argv,
+              resolution: seg.resolution,
+              safeBins,
+              cwd: workdir,
+            }),
+          )
+        ) {
+          // All segments are safe binaries, auto-allow
+          ask = "off";
+        }
+      }
 
       if (!sandbox && host === "gateway" && !params.env?.PATH) {
         const shellPath = getShellPathFromLoginShell({
@@ -1188,14 +1656,15 @@ export function createExecTool(
               return;
             }
 
-            let runningTimer: NodeJS.Timeout | null = null;
+            // Use timer-wheel for running notice timer
+            const runningTimerId = `exec-node-notice-${approvalId}`;
             if (approvalRunningNoticeMs > 0) {
-              runningTimer = setTimeout(() => {
+              scheduleTimeout(runningTimerId, approvalRunningNoticeMs, () => {
                 emitExecSystemEvent(
                   `Exec running (node=${nodeId} id=${approvalId}, >${noticeSeconds}s): ${commandText}`,
                   { sessionKey: notifySessionKey, contextKey },
                 );
-              }, approvalRunningNoticeMs);
+              });
             }
 
             try {
@@ -1210,8 +1679,8 @@ export function createExecTool(
                 { sessionKey: notifySessionKey, contextKey },
               );
             } finally {
-              if (runningTimer) {
-                clearTimeout(runningTimer);
+              if (approvalRunningNoticeMs > 0) {
+                cancelTimeout(runningTimerId);
               }
             }
           })();
@@ -1432,19 +1901,20 @@ export function createExecTool(
 
             markBackgrounded(run.session);
 
-            let runningTimer: NodeJS.Timeout | null = null;
+            // Use timer-wheel for running notice timer
+            const gwRunningTimerId = `exec-gw-notice-${approvalId}`;
             if (approvalRunningNoticeMs > 0) {
-              runningTimer = setTimeout(() => {
+              scheduleTimeout(gwRunningTimerId, approvalRunningNoticeMs, () => {
                 emitExecSystemEvent(
                   `Exec running (gateway id=${approvalId}, session=${run?.session.id}, >${noticeSeconds}s): ${commandText}`,
                   { sessionKey: notifySessionKey, contextKey },
                 );
-              }, approvalRunningNoticeMs);
+              });
             }
 
             const outcome = await run.promise;
-            if (runningTimer) {
-              clearTimeout(runningTimer);
+            if (approvalRunningNoticeMs > 0) {
+              cancelTimeout(gwRunningTimerId);
             }
             const output = normalizeNotifyOutput(
               tail(outcome.aggregated || "", DEFAULT_NOTIFY_TAIL_CHARS),
@@ -1521,7 +1991,9 @@ export function createExecTool(
       });
 
       let yielded = false;
-      let yieldTimer: NodeJS.Timeout | null = null;
+      // Use timer-wheel for yield timer
+      const yieldTimerId = `exec-yield-${run.session.id}`;
+      let yieldTimerSet = false;
 
       // Tool-call abort should not kill backgrounded sessions; timeouts still must.
       const onAbortSignal = () => {
@@ -1559,8 +2031,8 @@ export function createExecTool(
           });
 
         const onYieldNow = () => {
-          if (yieldTimer) {
-            clearTimeout(yieldTimer);
+          if (yieldTimerSet) {
+            cancelTimeout(yieldTimerId);
           }
           if (yielded) {
             return;
@@ -1574,21 +2046,22 @@ export function createExecTool(
           if (yieldWindow === 0) {
             onYieldNow();
           } else {
-            yieldTimer = setTimeout(() => {
+            yieldTimerSet = true;
+            scheduleTimeout(yieldTimerId, yieldWindow, () => {
               if (yielded) {
                 return;
               }
               yielded = true;
               markBackgrounded(run.session);
               resolveRunning();
-            }, yieldWindow);
+            });
           }
         }
 
         run.promise
-          .then((outcome) => {
-            if (yieldTimer) {
-              clearTimeout(yieldTimer);
+          .then(async (outcome) => {
+            if (yieldTimerSet) {
+              cancelTimeout(yieldTimerId);
             }
             if (yielded || run.session.backgrounded) {
               return;
@@ -1597,12 +2070,49 @@ export function createExecTool(
               reject(new Error(outcome.reason ?? "Command failed."));
               return;
             }
+
+            // NEW: Handle large output persistence (from Claude Code)
+            let outputText = outcome.aggregated || "(no output)";
+            let outputPath: string | undefined;
+            let imageSize: number | undefined;
+
+            if (outputText.length > LARGE_OUTPUT_THRESHOLD) {
+              try {
+                const persistResult = await persistLargeOutput(outputText);
+                outputPath = persistResult.outputPath;
+                imageSize = persistResult.size;
+                outputText = `${outputText.substring(0, LARGE_OUTPUT_THRESHOLD)}\n\n[Output truncated - full output saved to: ${outputPath}]`;
+              } catch (persistErr) {
+                // If persistence fails, just truncate
+                outputText = `${outputText.substring(0, LARGE_OUTPUT_THRESHOLD)}\n\n[Output truncated - failed to save full output]`;
+              }
+            }
+
+            // NEW: Detect and handle image output (from Claude Code)
+            const imageResult = detectImageOutput(outputText);
+            if (imageResult) {
+              outputText = imageResult.cleanedOutput;
+            }
+
             resolve({
               content: [
                 {
                   type: "text",
-                  text: `${getWarningText()}${outcome.aggregated || "(no output)"}`,
+                  text: `${getWarningText()}${outputText}`,
                 },
+                // NEW: Include image data if detected
+                ...(imageResult
+                  ? [
+                      {
+                        type: "image" as const,
+                        source: {
+                          type: "base64" as const,
+                          media_type: `image/${imageResult.imageType}`,
+                          data: imageResult.imageData,
+                        },
+                      },
+                    ]
+                  : []),
               ],
               details: {
                 status: "completed",
@@ -1610,12 +2120,13 @@ export function createExecTool(
                 durationMs: outcome.durationMs,
                 aggregated: outcome.aggregated,
                 cwd: run.session.cwd,
+                ...(outputPath && { outputPath, imageSize }),
               },
             });
           })
           .catch((err) => {
-            if (yieldTimer) {
-              clearTimeout(yieldTimer);
+            if (yieldTimerSet) {
+              cancelTimeout(yieldTimerId);
             }
             if (yielded || run.session.backgrounded) {
               return;

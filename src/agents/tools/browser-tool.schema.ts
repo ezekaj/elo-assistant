@@ -32,6 +32,8 @@ const BROWSER_TOOL_ACTIONS = [
   "upload",
   "dialog",
   "act",
+  "ocr",
+  "vision",
 ] as const;
 
 const BROWSER_TARGETS = ["sandbox", "host", "node"] as const;
@@ -109,4 +111,7 @@ export const BrowserToolSchema = Type.Object({
   accept: Type.Optional(Type.Boolean()),
   promptText: Type.Optional(Type.String()),
   request: Type.Optional(BrowserActSchema),
+  // Vision action parameters (Gemini 2.5 Flash)
+  prompt: Type.Optional(Type.String()),
+  apiKey: Type.Optional(Type.String()),
 });

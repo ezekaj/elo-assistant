@@ -1,5 +1,6 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { createSessionSlug as createSessionSlugId } from "./session-slug.js";
+import { scheduleInterval, cancelInterval } from "./timer-wheel.js";
 
 const DEFAULT_JOB_TTL_MS = 30 * 60 * 1000; // 30 minutes
 const MIN_JOB_TTL_MS = 60 * 1000; // 1 minute
@@ -70,7 +71,8 @@ export interface FinishedSession {
 const runningSessions = new Map<string, ProcessSession>();
 const finishedSessions = new Map<string, FinishedSession>();
 
-let sweeper: NodeJS.Timeout | null = null;
+let sweeperActive = false;
+const SWEEPER_TIMER_ID = "bash-process-registry-sweeper";
 
 function isSessionIdTaken(id: string) {
   return runningSessions.has(id) || finishedSessions.has(id);
@@ -255,20 +257,86 @@ function pruneFinishedSessions() {
       finishedSessions.delete(id);
     }
   }
+  // Also cleanup any zombie processes during sweep
+  cleanupZombies();
 }
 
 function startSweeper() {
-  if (sweeper) {
+  if (sweeperActive) {
     return;
   }
-  sweeper = setInterval(pruneFinishedSessions, Math.max(30_000, jobTtlMs / 6));
-  sweeper.unref?.();
+  sweeperActive = true;
+  scheduleInterval(SWEEPER_TIMER_ID, Math.max(30_000, jobTtlMs / 6), pruneFinishedSessions);
 }
 
 function stopSweeper() {
-  if (!sweeper) {
+  if (!sweeperActive) {
     return;
   }
-  clearInterval(sweeper);
-  sweeper = null;
+  cancelInterval(SWEEPER_TIMER_ID);
+  sweeperActive = false;
+}
+
+/**
+ * Check if a process is alive using kill(0) - O(1)
+ */
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Detect and cleanup zombie sessions (dead processes still in running map).
+ * Called during sweeper runs. Returns number of zombies cleaned.
+ */
+export function cleanupZombies(): number {
+  let cleaned = 0;
+  const now = Date.now();
+
+  for (const [id, session] of runningSessions.entries()) {
+    // Skip sessions without PID or already marked exited
+    if (!session.pid || session.exited) continue;
+
+    // Check if process is dead
+    if (!isProcessAlive(session.pid)) {
+      // Mark as failed and move to finished
+      session.exited = true;
+      session.exitCode = null;
+      session.exitSignal = "SIGKILL";
+      markExited(session, null, "SIGKILL", "failed");
+      cleaned++;
+    }
+  }
+
+  return cleaned;
+}
+
+/**
+ * Get list of zombie sessions (for reporting without cleanup)
+ */
+export function detectZombieSessions(): Array<{
+  id: string;
+  pid: number;
+  command: string;
+  ageMs: number;
+}> {
+  const zombies: Array<{ id: string; pid: number; command: string; ageMs: number }> = [];
+  const now = Date.now();
+
+  for (const session of runningSessions.values()) {
+    if (session.pid && !session.exited && !isProcessAlive(session.pid)) {
+      zombies.push({
+        id: session.id,
+        pid: session.pid,
+        command: session.command,
+        ageMs: now - session.startedAt,
+      });
+    }
+  }
+
+  return zombies;
 }

@@ -161,14 +161,26 @@ export type ToolDefinition = z.infer<typeof ToolDefinitionSchema>;
 // Request Body
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Tool Choice Schema - Controls which tools the model can use
+ * Matches Claude Code's ToolChoice implementation (Line 98656)
+ *
+ * Values:
+ * - "auto": Model automatically decides which tools to use (default)
+ * - "any": Model can use any available tool (Claude Code compatible)
+ * - "none": No tools allowed (OpenClaw enhancement)
+ * - "required": Must call at least one tool (OpenClaw enhancement)
+ * - { type: "function", function: { name: "..." } }: Force specific tool
+ */
 export const ToolChoiceSchema = z.union([
-  z.literal("auto"),
-  z.literal("none"),
-  z.literal("required"),
+  z.literal("auto"), // Model auto-selects tools (default)
+  z.literal("any"), // Model can use any tool (Claude Code compatible)
+  z.literal("none"), // No tools allowed (OpenClaw enhancement)
+  z.literal("required"), // Must call a tool (OpenClaw enhancement)
   z.object({
     type: z.literal("function"),
     function: z.object({ name: z.string() }),
-  }),
+  }), // Force specific tool
 ]);
 
 export const CreateResponseBodySchema = z
@@ -190,7 +202,10 @@ export const CreateResponseBodySchema = z
     previous_response_id: z.string().optional(),
     reasoning: z
       .object({
-        effort: z.enum(["low", "medium", "high"]).optional(),
+        effort: z
+          .enum(["low", "medium", "high", "max"])
+          .optional()
+          .describe("Effort level for thinking depth and token spend (low|medium|high|max)"),
         summary: z.enum(["auto", "concise", "detailed"]).optional(),
       })
       .optional(),

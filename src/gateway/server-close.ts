@@ -2,6 +2,7 @@ import type { Server as HttpServer } from "node:http";
 import type { WebSocketServer } from "ws";
 import type { CanvasHostHandler, CanvasHostServer } from "../canvas-host/server.js";
 import type { HeartbeatRunner } from "../infra/heartbeat-runner.js";
+import type { HybridHeartbeatRunner } from "../infra/heartbeat-v2/integration.js";
 import type { PluginServicesHandle } from "../plugins/services.js";
 import { type ChannelId, listChannelPlugins } from "../channels/plugins/index.js";
 import { stopGmailWatcher } from "../hooks/gmail-watcher.js";
@@ -14,12 +15,11 @@ export function createGatewayCloseHandler(params: {
   stopChannel: (name: ChannelId, accountId?: string) => Promise<void>;
   pluginServices: PluginServicesHandle | null;
   cron: { stop: () => void };
-  heartbeatRunner: HeartbeatRunner;
-  nodePresenceTimers: Map<string, ReturnType<typeof setInterval>>;
+  heartbeatRunner: HeartbeatRunner | HybridHeartbeatRunner | null;
   broadcast: (event: string, payload: unknown, opts?: { dropIfSlow?: boolean }) => void;
-  tickInterval: ReturnType<typeof setInterval>;
-  healthInterval: ReturnType<typeof setInterval>;
-  dedupeCleanup: ReturnType<typeof setInterval>;
+  stopTick: () => void;
+  stopHealth: () => void;
+  stopDedupeCleanup: () => void;
   agentUnsub: (() => void) | null;
   heartbeatUnsub: (() => void) | null;
   chatRunState: { clear: () => void };
@@ -69,18 +69,16 @@ export function createGatewayCloseHandler(params: {
     }
     await stopGmailWatcher();
     params.cron.stop();
-    params.heartbeatRunner.stop();
-    for (const timer of params.nodePresenceTimers.values()) {
-      clearInterval(timer);
+    if (params.heartbeatRunner) {
+      await params.heartbeatRunner.stop();
     }
-    params.nodePresenceTimers.clear();
     params.broadcast("shutdown", {
       reason,
       restartExpectedMs,
     });
-    clearInterval(params.tickInterval);
-    clearInterval(params.healthInterval);
-    clearInterval(params.dedupeCleanup);
+    params.stopTick();
+    params.stopHealth();
+    params.stopDedupeCleanup();
     if (params.agentUnsub) {
       try {
         params.agentUnsub();

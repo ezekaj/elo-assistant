@@ -3,6 +3,7 @@ import {
   logMessageQueued,
   logSessionStateChange,
 } from "../../logging/diagnostic.js";
+import { scheduleTimeout, cancelTimeout } from "../timer-wheel.js";
 
 type EmbeddedPiQueueHandle = {
   queueMessage: (text: string) => Promise<void>;
@@ -14,9 +15,10 @@ type EmbeddedPiQueueHandle = {
 const ACTIVE_EMBEDDED_RUNS = new Map<string, EmbeddedPiQueueHandle>();
 type EmbeddedRunWaiter = {
   resolve: (ended: boolean) => void;
-  timer: NodeJS.Timeout;
+  timerId: string;
 };
 const EMBEDDED_RUN_WAITERS = new Map<string, Set<EmbeddedRunWaiter>>();
+let waiterCounter = 0;
 
 export function queueEmbeddedPiMessage(sessionId: string, text: string): boolean {
   const handle = ACTIVE_EMBEDDED_RUNS.get(sessionId);
@@ -71,20 +73,20 @@ export function waitForEmbeddedPiRunEnd(sessionId: string, timeoutMs = 15_000): 
   diag.debug(`waiting for run end: sessionId=${sessionId} timeoutMs=${timeoutMs}`);
   return new Promise((resolve) => {
     const waiters = EMBEDDED_RUN_WAITERS.get(sessionId) ?? new Set();
+    const waiterId = ++waiterCounter;
+    const timerId = `pi-run-waiter-${sessionId}-${waiterId}`;
     const waiter: EmbeddedRunWaiter = {
       resolve,
-      timer: setTimeout(
-        () => {
-          waiters.delete(waiter);
-          if (waiters.size === 0) {
-            EMBEDDED_RUN_WAITERS.delete(sessionId);
-          }
-          diag.warn(`wait timeout: sessionId=${sessionId} timeoutMs=${timeoutMs}`);
-          resolve(false);
-        },
-        Math.max(100, timeoutMs),
-      ),
+      timerId,
     };
+    scheduleTimeout(timerId, Math.max(100, timeoutMs), () => {
+      waiters.delete(waiter);
+      if (waiters.size === 0) {
+        EMBEDDED_RUN_WAITERS.delete(sessionId);
+      }
+      diag.warn(`wait timeout: sessionId=${sessionId} timeoutMs=${timeoutMs}`);
+      resolve(false);
+    });
     waiters.add(waiter);
     EMBEDDED_RUN_WAITERS.set(sessionId, waiters);
     if (!ACTIVE_EMBEDDED_RUNS.has(sessionId)) {
@@ -92,7 +94,7 @@ export function waitForEmbeddedPiRunEnd(sessionId: string, timeoutMs = 15_000): 
       if (waiters.size === 0) {
         EMBEDDED_RUN_WAITERS.delete(sessionId);
       }
-      clearTimeout(waiter.timer);
+      cancelTimeout(waiter.timerId);
       resolve(true);
     }
   });
@@ -106,7 +108,7 @@ function notifyEmbeddedRunEnded(sessionId: string) {
   EMBEDDED_RUN_WAITERS.delete(sessionId);
   diag.debug(`notifying waiters: sessionId=${sessionId} waiterCount=${waiters.size}`);
   for (const waiter of waiters) {
-    clearTimeout(waiter.timer);
+    cancelTimeout(waiter.timerId);
     waiter.resolve(true);
   }
 }

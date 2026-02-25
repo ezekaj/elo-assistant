@@ -64,6 +64,164 @@ const DEFAULT_SOCKET = "~/.openclaw/exec-approvals.sock";
 const DEFAULT_FILE = "~/.openclaw/exec-approvals.json";
 export const DEFAULT_SAFE_BINS = ["jq", "grep", "cut", "sort", "uniq", "head", "tail", "tr", "wc"];
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Immediate Deny Patterns - Shell constructs that bypass simple parsing
+// These are checked BEFORE the parser runs to catch evasion attempts
+// ─────────────────────────────────────────────────────────────────────────────
+
+type ImmediateDenyPattern = { pattern: RegExp; reason: string };
+
+const IMMEDIATE_DENY_PATTERNS: ImmediateDenyPattern[] = [
+  // Command substitution - executes arbitrary commands
+  { pattern: /\$\([^)]+\)/, reason: "command substitution $()" },
+  { pattern: /`[^`]+`/, reason: "backtick substitution" },
+
+  // Variable expansion tricks
+  { pattern: /\$\{[^}]*[^}]\}/, reason: "variable expansion ${}" },
+
+  // IFS manipulation - can change word splitting
+  { pattern: /\bIFS\s*=/, reason: "IFS manipulation" },
+
+  // Nested shells - bypass outer security
+  { pattern: /\b(sh|bash|zsh|ksh|dash|csh|tcsh|fish)\s+-c\s+["']/, reason: "nested shell -c" },
+
+  // Interpreter inline code execution
+  { pattern: /\b(python|python3|python2)\s+-c\s+["']/, reason: "python -c execution" },
+  { pattern: /\bruby\s+-e\s+["']/, reason: "ruby -e execution" },
+  { pattern: /\bperl\s+-e\s+["']/, reason: "perl -e execution" },
+  { pattern: /\bnode\s+-e\s+["']/, reason: "node -e execution" },
+  { pattern: /\bphp\s+-r\s+["']/, reason: "php -r execution" },
+
+  // AWK/sed with system calls - check raw command, not preprocessed
+  // These are handled specially in checkImmediateDeny
+  // { pattern: /\bawk\s+.*\bsystem\s*\(/, reason: "awk system() call" },
+  // { pattern: /\bgawk\s+.*\bsystem\s*\(/, reason: "gawk system() call" },
+  // { pattern: /\bawk\s+.*\bgetline\s*</, reason: "awk getline from command" },
+
+  // Process substitution
+  { pattern: /<\s*\([^)]+\)/, reason: "process substitution <()" },
+  { pattern: />\s*\([^)]+\)/, reason: "process substitution >()" },
+
+  // Eval - executes string as command
+  { pattern: /\beval\s+/, reason: "eval command" },
+
+  // Source/dot - executes file in current shell
+  { pattern: /^\s*\.\s+\S/, reason: "dot source command" },
+  { pattern: /\bsource\s+/, reason: "source command" },
+
+  // xargs with command execution
+  { pattern: /\bxargs\s+.*(-I|-i)\s*\S+.*\bsh\b/, reason: "xargs with shell" },
+
+  // find -exec with shell
+  { pattern: /\bfind\s+.*-exec\s+.*\bsh\b/, reason: "find -exec with shell" },
+
+  // Dangerous here-strings/docs that could contain commands
+  { pattern: /<<<\s*\$\(/, reason: "here-string with command substitution" },
+
+  // Function definitions (could hide malicious code)
+  { pattern: /\(\s*\)\s*\{/, reason: "function definition" },
+];
+
+/**
+ * Preprocess command for immediate deny pattern matching.
+ * - Removes single-quoted sections (shell doesn't expand inside single quotes)
+ * - Removes escaped characters (e.g., \$ is a literal $, not expansion)
+ *
+ * Note: This is a simple approach; complex quoting scenarios may have edge cases.
+ */
+function preprocessForImmediateDeny(command: string): string {
+  let result = "";
+  let inSingleQuote = false;
+  let i = 0;
+
+  while (i < command.length) {
+    const ch = command[i];
+    const next = command[i + 1];
+
+    // Handle single quotes
+    if (ch === "'" && !inSingleQuote) {
+      inSingleQuote = true;
+      result += " ";
+      i++;
+      continue;
+    }
+    if (ch === "'" && inSingleQuote) {
+      inSingleQuote = false;
+      result += " ";
+      i++;
+      continue;
+    }
+    if (inSingleQuote) {
+      result += " "; // Replace quoted content with spaces
+      i++;
+      continue;
+    }
+
+    // Handle escaped characters outside single quotes
+    // \$ is a literal $, not expansion
+    if (ch === "\\" && next) {
+      result += "  "; // Replace both backslash and escaped char with spaces
+      i += 2;
+      continue;
+    }
+
+    result += ch;
+    i++;
+  }
+  return result;
+}
+
+// Patterns that should be checked against the RAW command (not preprocessed)
+// These are for cases where the dangerous construct is passed to another interpreter
+const RAW_COMMAND_DENY_PATTERNS: ImmediateDenyPattern[] = [
+  // AWK/gawk with system calls - awk will execute system() even if it's in shell single quotes
+  { pattern: /\bawk\s+.*\bsystem\s*\(/, reason: "awk system() call" },
+  { pattern: /\bgawk\s+.*\bsystem\s*\(/, reason: "gawk system() call" },
+  { pattern: /\bawk\s+.*\bgetline\s*[<|]/, reason: "awk getline from command" },
+];
+
+/**
+ * Check if a command matches any immediate deny patterns.
+ * These patterns represent shell constructs that can bypass simple parsing
+ * and should be blocked before deeper analysis.
+ *
+ * Note: Most patterns inside single quotes or escaped are ignored since shell treats them literally.
+ * However, some patterns (like awk system()) are checked against the raw command because
+ * the content is passed to another interpreter that will execute it.
+ */
+export function checkImmediateDeny(command: string): {
+  denied: boolean;
+  reason?: string;
+  pattern?: string;
+} {
+  // First check patterns that need the raw command (for interpreter-passed content)
+  for (const { pattern, reason } of RAW_COMMAND_DENY_PATTERNS) {
+    if (pattern.test(command)) {
+      return { denied: true, reason, pattern: pattern.source };
+    }
+  }
+
+  // Then check patterns with preprocessing (removes single quotes and escapes)
+  const commandToCheck = preprocessForImmediateDeny(command);
+
+  for (const { pattern, reason } of IMMEDIATE_DENY_PATTERNS) {
+    if (pattern.test(commandToCheck)) {
+      return { denied: true, reason, pattern: pattern.source };
+    }
+  }
+  return { denied: false };
+}
+
+/**
+ * Get all immediate deny patterns (for documentation/testing)
+ */
+export function getImmediateDenyPatterns(): Array<{ pattern: string; reason: string }> {
+  return IMMEDIATE_DENY_PATTERNS.map(({ pattern, reason }) => ({
+    pattern: pattern.source,
+    reason,
+  }));
+}
+
 function hashExecApprovalsRaw(raw: string | null): string {
   return crypto
     .createHash("sha256")
@@ -922,7 +1080,20 @@ export function analyzeShellCommand(params: {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   platform?: string | null;
+  skipImmediateDeny?: boolean;
 }): ExecCommandAnalysis {
+  // Check immediate deny patterns first (unless skipped for dry-run analysis)
+  if (!params.skipImmediateDeny) {
+    const denyCheck = checkImmediateDeny(params.command);
+    if (denyCheck.denied) {
+      return {
+        ok: false,
+        reason: `blocked pattern: ${denyCheck.reason}`,
+        segments: [],
+      };
+    }
+  }
+
   if (isWindowsPlatform(params.platform)) {
     return analyzeWindowsShellCommand(params);
   }

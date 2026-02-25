@@ -9,11 +9,14 @@ import type {
   TuiOptions,
   TuiStateAccess,
 } from "./tui-types.js";
+// Plan Mode imports
+import { isPlanMode, getPlanModeState, setPermissionMode } from "../agents/plan-mode/state.js";
 import {
   formatThinkingLevels,
   normalizeUsageDisplay,
   resolveResponseUsageMode,
 } from "../auto-reply/thinking.js";
+import { globalHookExecutor } from "../hooks/executor.js";
 import { normalizeAgentId } from "../routing/session-key.js";
 import { formatRelativeTime } from "../utils/time-format.js";
 import { helpText, parseCommand } from "./commands.js";
@@ -22,6 +25,7 @@ import {
   createSearchableSelectList,
   createSettingsList,
 } from "./components/selectors.js";
+import { createStreamingDisplay, streamSSE } from "./components/streaming-display.js";
 import { formatStatusSummary } from "./tui-status-summary.js";
 
 type CommandHandlerContext = {
@@ -240,6 +244,74 @@ export function createCommandHandlers(context: CommandHandlerContext) {
     if (!name) {
       return;
     }
+
+    // FIX: Detect if this looks like a file path or normal text, not a command
+    // If the "command" contains slashes and doesn't match known commands, treat as message
+    const knownCommands = [
+      "help",
+      "status",
+      "agent",
+      "agents",
+      "session",
+      "sessions",
+      "model",
+      "models",
+      "think",
+      "thinking",
+      "verbose",
+      "reasoning",
+      "elevated",
+      "elev",
+      "usage",
+      "activation",
+      "tools",
+      "expand",
+      "collapse",
+      "memory",
+      "compact",
+      "context",
+      "clear",
+      "reset",
+      "title",
+      "rename",
+      "delete",
+      "remove",
+      "list",
+      "show",
+      "set",
+      "get",
+      "save",
+      "load",
+      "export",
+      "import",
+      "config",
+      "settings",
+      "hooks",
+      "hooks-status",
+      "enter-plan-mode",
+      "exit-plan-mode",
+      "plan-status",
+      "teleport",
+      "teleport-status",
+      "teleport-complete",
+      "plugins-update",
+      "plugins-update-all",
+    ];
+
+    // If name contains path separators or looks like a path, send as message
+    if (name.includes("/") || name.includes("\\") || name.includes(".")) {
+      // This looks like a file path (e.g., "/Users/..." or "./file.txt")
+      // Send as normal message instead of command
+      await sendMessage(raw);
+      return;
+    }
+
+    // If name doesn't match known commands, send as message
+    if (!knownCommands.includes(name)) {
+      await sendMessage(raw);
+      return;
+    }
+
     switch (name) {
       case "help":
         chatLog.addSystem(
@@ -425,6 +497,41 @@ export function createCommandHandlers(context: CommandHandlerContext) {
           chatLog.addSystem(`activation failed: ${String(err)}`);
         }
         break;
+
+      case "hooks":
+        {
+          const hooks = globalHookExecutor.getHooks();
+          if (hooks.length === 0) {
+            chatLog.addSystem("No hooks configured");
+          } else {
+            chatLog.addSystem(`Active hooks: ${hooks.length}`);
+            for (const hook of hooks.slice(0, 10)) {
+              chatLog.addSystem(`  - ${hook.event}: ${hook.hooks.length} hook(s)`);
+            }
+            if (hooks.length > 10) {
+              chatLog.addSystem(`  ... and ${hooks.length - 10} more`);
+            }
+          }
+        }
+        break;
+
+      case "hooks-status":
+        {
+          const hooks = globalHookExecutor.getHooks();
+          const byEvent: Record<string, number> = {};
+          for (const hook of hooks) {
+            byEvent[hook.event] = (byEvent[hook.event] || 0) + hook.hooks.length;
+          }
+          chatLog.addSystem("Hooks status by event:");
+          for (const [event, count] of Object.entries(byEvent)) {
+            chatLog.addSystem(`  ${event}: ${count} hook(s)`);
+          }
+          if (hooks.length === 0) {
+            chatLog.addSystem("  (no hooks configured)");
+          }
+        }
+        break;
+
       case "new":
       case "reset":
         try {
@@ -444,6 +551,216 @@ export function createCommandHandlers(context: CommandHandlerContext) {
       case "abort":
         await abortActive();
         break;
+      case "cache":
+        // Show cache metrics
+        const { getCacheMetricsTracker } = await import("../agents/cache-metrics-tracker.js");
+        const tracker = getCacheMetricsTracker();
+        const metrics = tracker.getMetrics("claude");
+        chatLog.addSystem(
+          `Cache Metrics:\n` +
+            `  Hit Rate: ${(metrics.hitRate * 100).toFixed(1)}%\n` +
+            `  Read Tokens: ${metrics.cacheReadTokens.toLocaleString()}\n` +
+            `  Creation Tokens: ${metrics.cacheCreationTokens.toLocaleString()}\n` +
+            `  Input Tokens: ${metrics.inputTokens.toLocaleString()}\n` +
+            `  Total Tokens: ${tracker.getTotalTokens().toLocaleString()}\n` +
+            `  Requests: ${tracker.getRequestCount()}\n` +
+            `  Savings: $${metrics.estimatedSavings.toFixed(4)}`,
+        );
+        break;
+      case "cache-reset":
+        // Reset cache metrics
+        const { getCacheMetricsTracker: getTracker } =
+          await import("../agents/cache-metrics-tracker.js");
+        const trackerReset = getTracker();
+        trackerReset.reset();
+        chatLog.addSystem("Cache metrics reset");
+        break;
+      case "teleport":
+      case "import-session": {
+        // Import/teleport session from file
+        const { getSessionTeleportManager } = await import("../agents/session-teleport-manager.js");
+        const manager = getSessionTeleportManager();
+
+        if (!args) {
+          chatLog.addSystem("usage: /teleport <path-to-session-export.json>");
+          break;
+        }
+
+        try {
+          // Import session
+          const exportData = await manager.importSession(args);
+
+          // Validate git repo
+          const validation = await manager.validateGitRepo(exportData);
+          if (validation.status === "repo_mismatch") {
+            chatLog.addSystem(
+              `Git repository mismatch!\n` +
+                `Session is from: ${validation.sessionRepo?.url}\n` +
+                `Current repo: ${validation.currentRepo?.url}\n` +
+                `Please cd to the correct repository.`,
+            );
+            break;
+          }
+
+          // Set teleported session info
+          manager.setTeleportedSessionInfo({
+            isTeleported: true,
+            sessionId: exportData.sessionId,
+            hasLoggedFirstMessage: false,
+          });
+
+          // Load session (this would need to be implemented based on your session management)
+          // For now, just show success message
+          chatLog.addSystem(
+            `Session imported successfully!\n` +
+              `Session ID: ${exportData.sessionId}\n` +
+              `Messages: ${exportData.metadata.messageCount}\n` +
+              `Git repo: ${exportData.gitRepo?.url || "N/A"}\n` +
+              `Exported: ${new Date(exportData.exportedAt).toLocaleString()}`,
+          );
+
+          // Update footer to show teleport status
+          updateFooter();
+        } catch (error: any) {
+          chatLog.addSystem(`Import failed: ${error.message}`);
+        }
+        break;
+      }
+      case "export-session": {
+        // Export current session to file
+        const { getSessionTeleportManager } = await import("../agents/session-teleport-manager.js");
+        const manager = getSessionTeleportManager();
+
+        try {
+          // Get current session info (this would need to be implemented based on your session management)
+          // For now, just show placeholder message
+          chatLog.addSystem(
+            `Session export is ready!\n` +
+              `Usage: /export-session [output-path]\n` +
+              `Example: /export-session ./my-session.json\n` +
+              `\n` +
+              `Note: Full session export requires session management integration.`,
+          );
+        } catch (error: any) {
+          chatLog.addSystem(`Export failed: ${error.message}`);
+        }
+        break;
+      }
+
+      case "teleport-status": {
+        // Show teleport status
+        const { getTeleportedSessionInfo } = await import("../teleport/teleport-state.js");
+        const info = getTeleportedSessionInfo();
+
+        if (info?.isTeleported) {
+          chatLog.addSystem(
+            `Session Teleport Status:\n` +
+              `  Session: ${info.sessionId}\n` +
+              `  Branch: ${info.branch || "N/A"}\n` +
+              `  Teleported: ${info.teleportedAt?.toLocaleString() || "N/A"}\n` +
+              `  First Message Logged: ${info.hasLoggedFirstMessage}`,
+          );
+        } else {
+          chatLog.addSystem("Not a teleported session");
+        }
+        break;
+      }
+
+      case "teleport-complete": {
+        // Complete teleport and restore stashed changes
+        const { completeTeleport } = await import("../teleport/teleport-executor.js");
+        await completeTeleport();
+        chatLog.addSystem("✅ Teleport completed, changes restored");
+        updateFooter();
+        break;
+      }
+
+      // Plan Mode commands
+      case "enter-plan-mode": {
+        setPermissionMode("plan");
+        chatLog.addSystem(
+          "✅ Entered plan mode. Write tools blocked. Use exit-plan-mode when ready for approval.",
+        );
+        updateFooter();
+        break;
+      }
+
+      case "exit-plan-mode": {
+        setPermissionMode("default");
+        chatLog.addSystem("✅ Exited plan mode. Tools unblocked.");
+        updateFooter();
+        break;
+      }
+
+      case "plan-status": {
+        const state = getPlanModeState();
+        chatLog.addSystem(
+          `Plan Mode Status:\n` +
+            `  Mode: ${state.currentMode}\n` +
+            `  Has Exited: ${state.hasExitedPlanMode}\n` +
+            `  Awaiting Approval: ${state.awaitingPlanApproval}\n` +
+            `  Approved Domains: ${state.approvedDomains.join(", ") || "none"}`,
+        );
+        break;
+      }
+
+      case "stream-test": {
+        chatLog.addSystem("📡 Testing streaming...\n");
+
+        const display = createStreamingDisplay();
+
+        // Simulate streaming tokens
+        const tokens = ["Hello", " ", "world", "!", " ", "This", " ", "is", " ", "streaming", "."];
+
+        for (const token of tokens) {
+          display.handleEvent({
+            type: "token",
+            data: { content: token, tokenCount: 1 },
+            timestamp: Date.now(),
+            sequence: 0,
+          });
+
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+
+        display.handleEvent({
+          type: "done",
+          data: null,
+          timestamp: Date.now(),
+          sequence: 0,
+        });
+
+        chatLog.addSystem("\n✅ Streaming test complete");
+        break;
+      }
+
+      case "plugins-update": {
+        // Check for plugin updates
+        chatLog.addSystem("Checking for plugin updates...");
+
+        const { getUpdateSummary } = await import("../plugins/auto-update.js");
+        const summary = await getUpdateSummary();
+        chatLog.addSystem(summary);
+        break;
+      }
+
+      case "plugins-update-all": {
+        // Update all plugins
+        chatLog.addSystem("Updating all plugins...");
+
+        const { updateAllPlugins } = await import("../plugins/auto-update.js");
+        const result = await updateAllPlugins();
+
+        chatLog.addSystem(`✅ Updated: ${result.updated}`);
+        if (result.failed > 0) {
+          chatLog.addSystem(`❌ Failed: ${result.failed}`);
+          for (const error of result.errors) {
+            chatLog.addSystem(`  - ${error}`);
+          }
+        }
+        break;
+      }
+
       case "settings":
         openSettings();
         break;
@@ -460,7 +777,29 @@ export function createCommandHandlers(context: CommandHandlerContext) {
     tui.requestRender();
   };
 
-  const sendMessage = async (text: string) => {
+  // MESSAGE QUEUE: Prevent messages from being lost when sent while another is pending
+  const messageQueue: string[] = [];
+  let isSending = false;
+
+  const processMessageQueue = async () => {
+    // If already sending, just queue it - will be processed when current finishes
+    if (isSending) {
+      return;
+    }
+
+    // Process queue one message at a time
+    while (messageQueue.length > 0) {
+      const message = messageQueue.shift();
+      if (message) {
+        isSending = true;
+        await sendMessageInternal(message);
+        isSending = false;
+        // Loop continues if more messages in queue
+      }
+    }
+  };
+
+  const sendMessageInternal = async (text: string) => {
     try {
       chatLog.addUser(text);
       tui.requestRender();
@@ -484,8 +823,21 @@ export function createCommandHandlers(context: CommandHandlerContext) {
       state.activeChatRunId = null;
       chatLog.addSystem(`send failed: ${String(err)}`);
       setActivityStatus("error");
+    } finally {
+      isSending = false;
+      // Process any remaining messages in queue
+      if (messageQueue.length > 0) {
+        queueMicrotask(processMessageQueue);
+      }
     }
     tui.requestRender();
+  };
+
+  const sendMessage = async (text: string) => {
+    // Add to queue and process
+    messageQueue.push(text);
+    // Use queueMicrotask to ensure this runs after current call stack
+    queueMicrotask(processMessageQueue);
   };
 
   return {

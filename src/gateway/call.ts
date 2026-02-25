@@ -7,15 +7,17 @@ import {
   resolveStateDir,
 } from "../config/config.js";
 import { loadOrCreateDeviceIdentity } from "../infra/device-identity.js";
+import { type RetryConfig, retryAsync } from "../infra/retry.js";
 import { pickPrimaryTailnetIPv4 } from "../infra/tailnet.js";
 import { loadGatewayTlsRuntime } from "../infra/tls/gateway.js";
+import { logDebug } from "../logger.js";
 import {
   GATEWAY_CLIENT_MODES,
   GATEWAY_CLIENT_NAMES,
   type GatewayClientMode,
   type GatewayClientName,
 } from "../utils/message-channel.js";
-import { GatewayClient } from "./client.js";
+import { GatewayClient, GATEWAY_CLOSE_CODE_HINTS } from "./client.js";
 import { PROTOCOL_VERSION } from "./protocol/index.js";
 
 export type CallGatewayOptions = {
@@ -41,6 +43,17 @@ export type CallGatewayOptions = {
    * Does not affect config loading; callers still control auth via opts.token/password/env/config.
    */
   configPath?: string;
+  /**
+   * Idempotency key for retry safety. If provided, the server can deduplicate
+   * retried requests. Use randomIdempotencyKey() to generate one.
+   */
+  idempotencyKey?: string;
+  /**
+   * Retry configuration for transient failures (network errors, 5xx, timeouts).
+   * Defaults to { attempts: 3, minDelayMs: 500, maxDelayMs: 10000, jitter: 0.2 }.
+   * Set to false to disable retries.
+   */
+  retry?: RetryConfig | false;
 };
 
 export type GatewayConnectionDetails = {
@@ -109,10 +122,107 @@ export function buildGatewayConnectionDetails(
   };
 }
 
+/**
+ * Internal single-attempt gateway call. Used by callGateway with retry wrapper.
+ */
+async function callGatewayOnce<T = Record<string, unknown>>(
+  opts: CallGatewayOptions,
+  resolvedConfig: {
+    url: string;
+    token: string | undefined;
+    password: string | undefined;
+    tlsFingerprint: string | undefined;
+    connectionDetails: GatewayConnectionDetails;
+  },
+): Promise<T> {
+  const timeoutMs = opts.timeoutMs ?? 10_000;
+  const { url, token, password, tlsFingerprint, connectionDetails } = resolvedConfig;
+
+  const formatCloseError = (code: number, reason: string) => {
+    const reasonText = reason?.trim() || "no close reason";
+    const hint = GATEWAY_CLOSE_CODE_HINTS[code] ?? "";
+    const suffix = hint ? ` ${hint}` : "";
+    return `gateway closed (${code}${suffix}): ${reasonText}\n${connectionDetails.message}`;
+  };
+  const formatTimeoutError = () =>
+    `gateway timeout after ${timeoutMs}ms\n${connectionDetails.message}`;
+
+  return await new Promise<T>((resolve, reject) => {
+    let settled = false;
+    let ignoreClose = false;
+    const stop = (err?: Error, value?: T) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      if (err) {
+        reject(err);
+      } else {
+        resolve(value as T);
+      }
+    };
+
+    const client = new GatewayClient({
+      url,
+      token,
+      password,
+      tlsFingerprint,
+      instanceId: opts.instanceId ?? randomUUID(),
+      clientName: opts.clientName ?? GATEWAY_CLIENT_NAMES.CLI,
+      clientDisplayName: opts.clientDisplayName,
+      clientVersion: opts.clientVersion ?? "dev",
+      platform: opts.platform,
+      mode: opts.mode ?? GATEWAY_CLIENT_MODES.CLI,
+      role: "operator",
+      scopes: ["operator.admin", "operator.approvals", "operator.pairing"],
+      deviceIdentity: loadOrCreateDeviceIdentity(),
+      minProtocol: opts.minProtocol ?? PROTOCOL_VERSION,
+      maxProtocol: opts.maxProtocol ?? PROTOCOL_VERSION,
+      onHelloOk: async () => {
+        try {
+          // Include idempotency key in params if provided
+          const params = opts.idempotencyKey
+            ? {
+                ...(typeof opts.params === "object" && opts.params !== null ? opts.params : {}),
+                _idempotencyKey: opts.idempotencyKey,
+              }
+            : opts.params;
+          const result = await client.request<T>(opts.method, params, {
+            expectFinal: opts.expectFinal,
+          });
+          ignoreClose = true;
+          stop(undefined, result);
+          client.stop();
+        } catch (err) {
+          ignoreClose = true;
+          client.stop();
+          stop(err as Error);
+        }
+      },
+      onClose: (code, reason) => {
+        if (settled || ignoreClose) {
+          return;
+        }
+        ignoreClose = true;
+        client.stop();
+        stop(new Error(formatCloseError(code, reason)));
+      },
+    });
+
+    const timer = setTimeout(() => {
+      ignoreClose = true;
+      client.stop();
+      stop(new Error(formatTimeoutError()));
+    }, timeoutMs);
+
+    client.start();
+  });
+}
+
 export async function callGateway<T = Record<string, unknown>>(
   opts: CallGatewayOptions,
 ): Promise<T> {
-  const timeoutMs = opts.timeoutMs ?? 10_000;
   const config = opts.config ?? loadConfig();
   const isRemoteMode = config.gateway?.mode === "remote";
   const remote = isRemoteMode ? config.gateway?.remote : undefined;
@@ -179,81 +289,91 @@ export async function callGateway<T = Record<string, unknown>>(
         ? authPassword.trim()
         : undefined);
 
-  const formatCloseError = (code: number, reason: string) => {
-    const reasonText = reason?.trim() || "no close reason";
-    const hint =
-      code === 1006 ? "abnormal closure (no close frame)" : code === 1000 ? "normal closure" : "";
-    const suffix = hint ? ` ${hint}` : "";
-    return `gateway closed (${code}${suffix}): ${reasonText}\n${connectionDetails.message}`;
+  const resolvedConfig = { url, token, password, tlsFingerprint, connectionDetails };
+
+  // If retry is disabled, call once without retry wrapper
+  if (opts.retry === false) {
+    return callGatewayOnce<T>(opts, resolvedConfig);
+  }
+
+  // Merge user-provided retry config with defaults
+  const retryConfig: RetryConfig = {
+    ...DEFAULT_GATEWAY_RETRY,
+    ...(typeof opts.retry === "object" ? opts.retry : {}),
   };
-  const formatTimeoutError = () =>
-    `gateway timeout after ${timeoutMs}ms\n${connectionDetails.message}`;
-  return await new Promise<T>((resolve, reject) => {
-    let settled = false;
-    let ignoreClose = false;
-    const stop = (err?: Error, value?: T) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      clearTimeout(timer);
-      if (err) {
-        reject(err);
-      } else {
-        resolve(value as T);
-      }
-    };
 
-    const client = new GatewayClient({
-      url,
-      token,
-      password,
-      tlsFingerprint,
-      instanceId: opts.instanceId ?? randomUUID(),
-      clientName: opts.clientName ?? GATEWAY_CLIENT_NAMES.CLI,
-      clientDisplayName: opts.clientDisplayName,
-      clientVersion: opts.clientVersion ?? "dev",
-      platform: opts.platform,
-      mode: opts.mode ?? GATEWAY_CLIENT_MODES.CLI,
-      role: "operator",
-      scopes: ["operator.admin", "operator.approvals", "operator.pairing"],
-      deviceIdentity: loadOrCreateDeviceIdentity(),
-      minProtocol: opts.minProtocol ?? PROTOCOL_VERSION,
-      maxProtocol: opts.maxProtocol ?? PROTOCOL_VERSION,
-      onHelloOk: async () => {
-        try {
-          const result = await client.request<T>(opts.method, opts.params, {
-            expectFinal: opts.expectFinal,
-          });
-          ignoreClose = true;
-          stop(undefined, result);
-          client.stop();
-        } catch (err) {
-          ignoreClose = true;
-          client.stop();
-          stop(err as Error);
-        }
-      },
-      onClose: (code, reason) => {
-        if (settled || ignoreClose) {
-          return;
-        }
-        ignoreClose = true;
-        client.stop();
-        stop(new Error(formatCloseError(code, reason)));
-      },
-    });
-
-    const timer = setTimeout(() => {
-      ignoreClose = true;
-      client.stop();
-      stop(new Error(formatTimeoutError()));
-    }, timeoutMs);
-
-    client.start();
+  return retryAsync(() => callGatewayOnce<T>(opts, resolvedConfig), {
+    ...retryConfig,
+    label: `gateway:${opts.method}`,
+    shouldRetry: (err) => isRetryableGatewayError(err),
+    onRetry: (info) => {
+      logDebug(
+        `[gateway] Retrying ${opts.method} (attempt ${info.attempt + 1}/${info.maxAttempts}) ` +
+          `after ${info.delayMs}ms: ${String(info.err)}`,
+      );
+    },
   });
 }
 
 export function randomIdempotencyKey() {
   return randomUUID();
+}
+
+/** Default retry config for transient gateway failures. */
+const DEFAULT_GATEWAY_RETRY: RetryConfig = {
+  attempts: 3,
+  minDelayMs: 500,
+  maxDelayMs: 10_000,
+  jitter: 0.2,
+};
+
+/** WebSocket close codes that indicate transient failures worth retrying. */
+const RETRYABLE_CLOSE_CODES = new Set([
+  1006, // Abnormal closure (no close frame) - network issue
+  1012, // Service restart - gateway restarting
+  1013, // Try again later
+  4000, // Custom: tick timeout
+]);
+
+/** Error patterns that indicate transient failures. */
+const RETRYABLE_ERROR_PATTERNS = [
+  /ECONNRESET/i,
+  /ECONNREFUSED/i,
+  /ETIMEDOUT/i,
+  /ENOTFOUND/i,
+  /EPIPE/i,
+  /EAI_AGAIN/i,
+  /socket hang up/i,
+  /gateway timeout/i,
+  /gateway closed \(1006\)/i,
+  /gateway closed \(1012\)/i,
+  /gateway closed \(1013\)/i,
+  /gateway closed \(4000\)/i,
+  /abnormal closure/i,
+  /service restart/i,
+];
+
+/**
+ * Determines if an error is a transient failure that should be retried.
+ * Returns false for auth errors, policy violations, and other permanent failures.
+ */
+function isRetryableGatewayError(err: unknown): boolean {
+  if (!(err instanceof Error)) {
+    return false;
+  }
+  const msg = err.message;
+
+  // Don't retry auth/policy errors
+  if (
+    msg.includes("gateway closed (1008)") || // Policy violation
+    msg.includes("auth") ||
+    msg.includes("unauthorized") ||
+    msg.includes("forbidden") ||
+    msg.includes("invalid token")
+  ) {
+    return false;
+  }
+
+  // Check for retryable patterns
+  return RETRYABLE_ERROR_PATTERNS.some((pattern) => pattern.test(msg));
 }

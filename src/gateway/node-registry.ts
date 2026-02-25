@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { GatewayWsClient } from "./server/ws-types.js";
+import { scheduleTimeout, cancelTimeout } from "../agents/timer-wheel.js";
 
 export type NodeSession = {
   nodeId: string;
@@ -25,7 +26,15 @@ type PendingInvoke = {
   command: string;
   resolve: (value: NodeInvokeResult) => void;
   reject: (err: Error) => void;
-  timer: ReturnType<typeof setTimeout>;
+  timerId: string;
+};
+
+/** TTL for idempotency key deduplication (5 minutes). */
+const IDEMPOTENCY_TTL_MS = 5 * 60 * 1000;
+
+type IdempotencyEntry = {
+  result: NodeInvokeResult;
+  expiresAt: number;
 };
 
 export type NodeInvokeResult = {
@@ -35,10 +44,17 @@ export type NodeInvokeResult = {
   error?: { code?: string; message?: string } | null;
 };
 
+/** Max pending requests per node before backpressure kicks in */
+const MAX_PENDING_PER_NODE = 100;
+
 export class NodeRegistry {
   private nodesById = new Map<string, NodeSession>();
   private nodesByConn = new Map<string, string>();
   private pendingInvokes = new Map<string, PendingInvoke>();
+  /** Cache for idempotency key deduplication. Key = idempotencyKey, Value = cached result. */
+  private idempotencyCache = new Map<string, IdempotencyEntry>();
+  /** Track pending count per node for backpressure */
+  private pendingCountByNode = new Map<string, number>();
 
   register(client: GatewayWsClient, opts: { remoteIp?: string | undefined }) {
     const connect = client.connect;
@@ -89,7 +105,7 @@ export class NodeRegistry {
       if (pending.nodeId !== nodeId) {
         continue;
       }
-      clearTimeout(pending.timer);
+      cancelTimeout(pending.timerId);
       pending.reject(new Error(`node disconnected (${pending.command})`));
       this.pendingInvokes.delete(id);
     }
@@ -111,6 +127,18 @@ export class NodeRegistry {
     timeoutMs?: number;
     idempotencyKey?: string;
   }): Promise<NodeInvokeResult> {
+    // Check idempotency cache for duplicate requests
+    if (params.idempotencyKey) {
+      const cached = this.idempotencyCache.get(params.idempotencyKey);
+      if (cached && cached.expiresAt > Date.now()) {
+        return cached.result;
+      }
+      // Clean up expired entry if present
+      if (cached) {
+        this.idempotencyCache.delete(params.idempotencyKey);
+      }
+    }
+
     const node = this.nodesById.get(params.nodeId);
     if (!node) {
       return {
@@ -118,6 +146,20 @@ export class NodeRegistry {
         error: { code: "NOT_CONNECTED", message: "node not connected" },
       };
     }
+
+    // Backpressure: reject if too many pending requests for this node
+    const currentPending = this.pendingCountByNode.get(params.nodeId) ?? 0;
+    if (currentPending >= MAX_PENDING_PER_NODE) {
+      return {
+        ok: false,
+        error: {
+          code: "OVERLOADED",
+          message: `node ${params.nodeId} has too many pending requests (${currentPending})`,
+        },
+      };
+    }
+    this.pendingCountByNode.set(params.nodeId, currentPending + 1);
+
     const requestId = randomUUID();
     const payload = {
       id: requestId,
@@ -130,28 +172,64 @@ export class NodeRegistry {
     };
     const ok = this.sendEventToSession(node, "node.invoke.request", payload);
     if (!ok) {
+      // Decrement pending count on early failure
+      const count = this.pendingCountByNode.get(params.nodeId) ?? 1;
+      this.pendingCountByNode.set(params.nodeId, Math.max(0, count - 1));
       return {
         ok: false,
         error: { code: "UNAVAILABLE", message: "failed to send invoke to node" },
       };
     }
     const timeoutMs = typeof params.timeoutMs === "number" ? params.timeoutMs : 30_000;
-    return await new Promise<NodeInvokeResult>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pendingInvokes.delete(requestId);
-        resolve({
-          ok: false,
-          error: { code: "TIMEOUT", message: "node invoke timed out" },
+    let result: NodeInvokeResult;
+    try {
+      result = await new Promise<NodeInvokeResult>((resolve, reject) => {
+        const timerId = `node-invoke-${requestId}`;
+        scheduleTimeout(timerId, timeoutMs, () => {
+          this.pendingInvokes.delete(requestId);
+          resolve({
+            ok: false,
+            error: { code: "TIMEOUT", message: "node invoke timed out" },
+          });
         });
-      }, timeoutMs);
-      this.pendingInvokes.set(requestId, {
-        nodeId: params.nodeId,
-        command: params.command,
-        resolve,
-        reject,
-        timer,
+        this.pendingInvokes.set(requestId, {
+          nodeId: params.nodeId,
+          command: params.command,
+          resolve,
+          reject,
+          timerId,
+        });
       });
-    });
+    } finally {
+      // Always decrement pending count
+      const count = this.pendingCountByNode.get(params.nodeId) ?? 1;
+      this.pendingCountByNode.set(params.nodeId, Math.max(0, count - 1));
+    }
+
+    // Cache results with idempotency key (both success and error to prevent retry storms)
+    if (params.idempotencyKey) {
+      this.idempotencyCache.set(params.idempotencyKey, {
+        result,
+        expiresAt: Date.now() + IDEMPOTENCY_TTL_MS,
+      });
+      // Periodic cleanup: remove expired entries (limit to 100 at a time)
+      this.cleanupExpiredIdempotencyEntries();
+    }
+
+    return result;
+  }
+
+  /** Clean up expired idempotency cache entries to prevent memory leaks. */
+  private cleanupExpiredIdempotencyEntries(): void {
+    const now = Date.now();
+    let cleaned = 0;
+    for (const [key, entry] of this.idempotencyCache) {
+      if (entry.expiresAt <= now) {
+        this.idempotencyCache.delete(key);
+        cleaned++;
+        if (cleaned >= 100) break; // Limit cleanup per call
+      }
+    }
   }
 
   handleInvokeResult(params: {
@@ -169,7 +247,7 @@ export class NodeRegistry {
     if (pending.nodeId !== params.nodeId) {
       return false;
     }
-    clearTimeout(pending.timer);
+    cancelTimeout(pending.timerId);
     this.pendingInvokes.delete(params.id);
     pending.resolve({
       ok: params.ok,

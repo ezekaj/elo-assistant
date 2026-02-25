@@ -127,19 +127,45 @@ function extractClientTools(body: CreateResponseBody): ClientToolDefinition[] {
   return (body.tools ?? []) as ClientToolDefinition[];
 }
 
+/**
+ * Apply tool choice to filter available tools and add system prompts
+ * Matches Claude Code's ToolChoice implementation (Line 98656)
+ *
+ * Tool Choice Values:
+ * - "auto": Model decides (default) - returns all tools
+ * - "any": Model can use any tool - returns all tools (Claude Code compatible)
+ * - "none": No tools allowed - returns empty array
+ * - "required": Must call a tool - returns all tools + system prompt
+ * - { type: "function", function: { name: "..." } }: Force specific tool
+ */
 function applyToolChoice(params: {
   tools: ClientToolDefinition[];
   toolChoice: CreateResponseBody["tool_choice"];
 }): { tools: ClientToolDefinition[]; extraSystemPrompt?: string } {
   const { tools, toolChoice } = params;
+
+  // Default: no tool choice specified - return all tools
   if (!toolChoice) {
     return { tools };
   }
 
+  // "auto": Model automatically decides which tools to use
+  if (toolChoice === "auto") {
+    return { tools };
+  }
+
+  // "any": Model can use any available tool (Claude Code compatible)
+  // Same behavior as "auto" - returns all tools without forcing usage
+  if (toolChoice === "any") {
+    return { tools };
+  }
+
+  // "none": No tools allowed - return empty array
   if (toolChoice === "none") {
     return { tools: [] };
   }
 
+  // "required": Must call at least one tool before responding
   if (toolChoice === "required") {
     if (tools.length === 0) {
       throw new Error("tool_choice=required but no tools were provided");
@@ -150,6 +176,7 @@ function applyToolChoice(params: {
     };
   }
 
+  // Specific tool: Force usage of a specific tool by name
   if (typeof toolChoice === "object" && toolChoice.type === "function") {
     const targetName = toolChoice.function?.name?.trim();
     if (!targetName) {
@@ -165,6 +192,7 @@ function applyToolChoice(params: {
     };
   }
 
+  // Fallback: return all tools (should not reach here)
   return { tools };
 }
 

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { WebSocket, type ClientOptions, type CertMeta } from "ws";
 import type { DeviceIdentity } from "../infra/device-identity.js";
+import { scheduleTimeout, cancelTimeout } from "../agents/timer-wheel.js";
 import {
   clearDeviceAuthToken,
   loadDeviceAuthToken,
@@ -85,11 +86,12 @@ export class GatewayClient {
   private lastSeq: number | null = null;
   private connectNonce: string | null = null;
   private connectSent = false;
-  private connectTimer: NodeJS.Timeout | null = null;
+  private connectTimerActive = false;
   // Track last tick to detect silent stalls.
   private lastTick: number | null = null;
   private tickIntervalMs = 30_000;
-  private tickTimer: NodeJS.Timeout | null = null;
+  private tickTimerActive = false;
+  private readonly clientTimerId = randomUUID();
 
   constructor(opts: GatewayClientOptions) {
     this.opts = {
@@ -166,9 +168,9 @@ export class GatewayClient {
 
   stop() {
     this.closed = true;
-    if (this.tickTimer) {
-      clearInterval(this.tickTimer);
-      this.tickTimer = null;
+    if (this.tickTimerActive) {
+      cancelTimeout(`gw-tick-${this.clientTimerId}`);
+      this.tickTimerActive = false;
     }
     this.ws?.close();
     this.ws = null;
@@ -180,9 +182,9 @@ export class GatewayClient {
       return;
     }
     this.connectSent = true;
-    if (this.connectTimer) {
-      clearTimeout(this.connectTimer);
-      this.connectTimer = null;
+    if (this.connectTimerActive) {
+      cancelTimeout(`gw-connect-${this.clientTimerId}`);
+      this.connectTimerActive = false;
     }
     const role = this.opts.role ?? "operator";
     const storedToken = this.opts.deviceIdentity
@@ -338,25 +340,27 @@ export class GatewayClient {
   private queueConnect() {
     this.connectNonce = null;
     this.connectSent = false;
-    if (this.connectTimer) {
-      clearTimeout(this.connectTimer);
+    if (this.connectTimerActive) {
+      cancelTimeout(`gw-connect-${this.clientTimerId}`);
     }
-    this.connectTimer = setTimeout(() => {
+    this.connectTimerActive = true;
+    scheduleTimeout(`gw-connect-${this.clientTimerId}`, 750, () => {
+      this.connectTimerActive = false;
       this.sendConnect();
-    }, 750);
+    });
   }
 
   private scheduleReconnect() {
     if (this.closed) {
       return;
     }
-    if (this.tickTimer) {
-      clearInterval(this.tickTimer);
-      this.tickTimer = null;
+    if (this.tickTimerActive) {
+      cancelTimeout(`gw-tick-${this.clientTimerId}`);
+      this.tickTimerActive = false;
     }
     const delay = this.backoffMs;
     this.backoffMs = Math.min(this.backoffMs * 2, 30_000);
-    setTimeout(() => this.start(), delay).unref();
+    scheduleTimeout(`gw-reconnect-${this.clientTimerId}`, delay, () => this.start());
   }
 
   private flushPendingErrors(err: Error) {
@@ -367,22 +371,33 @@ export class GatewayClient {
   }
 
   private startTickWatch() {
-    if (this.tickTimer) {
-      clearInterval(this.tickTimer);
+    if (this.tickTimerActive) {
+      cancelTimeout(`gw-tick-${this.clientTimerId}`);
     }
     const interval = Math.max(this.tickIntervalMs, 1000);
-    this.tickTimer = setInterval(() => {
+    const scheduleNextTick = () => {
       if (this.closed) {
+        this.tickTimerActive = false;
         return;
       }
-      if (!this.lastTick) {
-        return;
-      }
-      const gap = Date.now() - this.lastTick;
-      if (gap > this.tickIntervalMs * 2) {
-        this.ws?.close(4000, "tick timeout");
-      }
-    }, interval);
+      this.tickTimerActive = true;
+      scheduleTimeout(`gw-tick-${this.clientTimerId}`, interval, () => {
+        if (this.closed) {
+          this.tickTimerActive = false;
+          return;
+        }
+        if (this.lastTick) {
+          const gap = Date.now() - this.lastTick;
+          if (gap > this.tickIntervalMs * 2) {
+            this.ws?.close(4000, "tick timeout");
+            this.tickTimerActive = false;
+            return;
+          }
+        }
+        scheduleNextTick();
+      });
+    };
+    scheduleNextTick();
   }
 
   private validateTlsFingerprint(): Error | null {

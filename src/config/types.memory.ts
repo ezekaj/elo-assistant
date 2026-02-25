@@ -3,10 +3,19 @@ import type { SessionSendPolicyConfig } from "./types.base.js";
 export type MemoryBackend = "builtin" | "qmd";
 export type MemoryCitationsMode = "auto" | "on" | "off";
 
+export type NeuroMemoryConfig = {
+  enabled: boolean;
+  agentPath?: string;
+  // Hybrid integration: store briefing summaries in neuro-memory
+  memorableTypes?: string[];
+  surpriseThreshold?: number;
+};
+
 export type MemoryConfig = {
   backend?: MemoryBackend;
   citations?: MemoryCitationsMode;
   qmd?: MemoryQmdConfig;
+  neuroMemory?: NeuroMemoryConfig;
 };
 
 export type MemoryQmdConfig = {

@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { scheduleInterval, cancelInterval } from "../agents/timer-wheel.js";
 import { formatCliCommand } from "../cli/command-format.js";
 import {
   type OpenClawConfig,
@@ -326,16 +327,17 @@ export async function runGmailService(opts: GmailRunOptions) {
   let child = spawnGogServe(runtimeConfig);
 
   const renewMs = runtimeConfig.renewEveryMinutes * 60_000;
-  const renewTimer = setInterval(() => {
+  const renewTimerId = `gmail-ops-renew-${Date.now()}`;
+  scheduleInterval(renewTimerId, renewMs, () => {
     void startGmailWatch(runtimeConfig);
-  }, renewMs);
+  });
 
   const shutdown = () => {
     if (shuttingDown) {
       return;
     }
     shuttingDown = true;
-    clearInterval(renewTimer);
+    cancelInterval(renewTimerId);
     child.kill("SIGTERM");
   };
 

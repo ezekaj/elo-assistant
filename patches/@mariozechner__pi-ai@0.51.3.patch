@@ -1,0 +1,14 @@
+diff --git a/dist/providers/openai-completions.js b/dist/providers/openai-completions.js
+index 3b57cd261f37b7075445866a2b7b68a77c0b09e6..c944a6754d9c0aedaf24d52a3aa539c248372606 100644
+--- a/dist/providers/openai-completions.js
++++ b/dist/providers/openai-completions.js
+@@ -663,6 +663,9 @@ function mapStopReason(reason) {
+             return "toolUse";
+         case "content_filter":
+             return "error";
++        case "abort":
++            // Zhipu/Z.AI returns "abort" when the generation is stopped
++            return "stop";
+         default: {
+             const _exhaustive = reason;
+             throw new Error(`Unhandled stop reason: ${_exhaustive}`);

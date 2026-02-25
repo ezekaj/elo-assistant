@@ -42,6 +42,11 @@ export type SandboxDockerSettings = {
   extraHosts?: string[];
   /** Additional bind mounts (host:container:mode format, e.g. ["/host/path:/container/path:rw"]). */
   binds?: string[];
+  /** NEW: Network restrictions for sandbox (allowed/denied hosts) */
+  network?: {
+    allowedHosts?: string[];
+    deniedHosts?: string[];
+  };
 };
 
 export type SandboxBrowserSettings = {

@@ -1,6 +1,7 @@
 import type { Server } from "node:http";
 import express, { type Express } from "express";
 import fs from "node:fs/promises";
+import { scheduleInterval } from "../agents/timer-wheel.js";
 import { danger } from "../globals.js";
 import { SafeOpenError, openFileWithinRoot } from "../infra/fs-safe.js";
 import { defaultRuntime, type RuntimeEnv } from "../runtime.js";
@@ -83,9 +84,9 @@ export function attachMediaRoutes(
   });
 
   // periodic cleanup
-  setInterval(() => {
+  scheduleInterval("media-cleanup", ttlMs, () => {
     void cleanOldMedia(ttlMs);
-  }, ttlMs).unref();
+  });
 }
 
 export async function startMediaServer(

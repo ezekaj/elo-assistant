@@ -1,7 +1,19 @@
 import type { SlashCommand } from "@mariozechner/pi-tui";
 import type { OpenClawConfig } from "../config/types.js";
+import { isPlanRequest, isDeepPlanRequest } from "../agents/plan-mode/auto-plan-detector.js";
+// Plan Mode imports
+import { isPlanMode, getPlanModeState, setPermissionMode } from "../agents/plan-mode/state.js";
 import { listChatCommands, listChatCommandsForConfig } from "../auto-reply/commands-registry.js";
 import { formatThinkingLevels, listThinkingLevelLabels } from "../auto-reply/thinking.js";
+import { VALID_EFFORT_LEVELS } from "../config/env-vars.effort.js";
+import { globalHookExecutor } from "../hooks/executor.js";
+// Plugin update imports
+import { checkForUpdates } from "../plugins/auto-update.js";
+// Streaming imports
+import { streamSSE } from "../streaming/sse-client.js";
+// Teleport imports
+import { getTeleportedSessionInfo } from "../teleport/teleport-state.js";
+import { createStreamingDisplay } from "./components/streaming-display.js";
 
 const VERBOSE_LEVELS = ["on", "off"];
 const REASONING_LEVELS = ["on", "off"];
@@ -105,6 +117,88 @@ export function getSlashCommands(options: SlashCommandOptions = {}): SlashComman
         })),
     },
     {
+      name: "effort",
+      description: "Set effort level (low|medium|high|max)",
+      getArgumentCompletions: (prefix) =>
+        VALID_EFFORT_LEVELS.filter((v) => v.startsWith(prefix.toLowerCase())).map((value) => ({
+          value,
+          label: value,
+        })),
+    },
+    {
+      name: "cache",
+      description: "Show cache metrics",
+    },
+    {
+      name: "cache-reset",
+      description: "Reset cache metrics",
+    },
+    {
+      name: "teleport",
+      description: "Resume a session from export file",
+      getArgumentCompletions: (prefix) => [
+        { value: "<path>", label: "Path to session export file" },
+      ],
+    },
+    {
+      name: "export-session",
+      description: "Export current session to file",
+      getArgumentCompletions: (prefix) => [{ value: "<path>", label: "Output path (optional)" }],
+    },
+    {
+      name: "import-session",
+      description: "Import session from export file",
+      getArgumentCompletions: (prefix) => [
+        { value: "<path>", label: "Path to session export file" },
+      ],
+    },
+    {
+      name: "hooks",
+      description: "Show active hooks status",
+    },
+    {
+      name: "hooks-status",
+      description: "Show detailed hooks status",
+    },
+    // Plan Mode commands
+    {
+      name: "enter-plan-mode",
+      description: "Enter plan mode (no tool execution)",
+    },
+    {
+      name: "exit-plan-mode",
+      description: "Exit plan mode with approval",
+    },
+    {
+      name: "plan-status",
+      description: "Show plan mode status",
+    },
+    // Streaming commands
+    {
+      name: "stream-test",
+      description: "Test streaming functionality",
+    },
+    {
+      name: "teleport",
+      description: "Teleport to session from another device",
+    },
+    {
+      name: "teleport-status",
+      description: "Show teleport status",
+    },
+    {
+      name: "teleport-complete",
+      description: "Complete teleport and restore changes",
+    },
+    {
+      name: "plugins-update",
+      description: "Check for plugin updates",
+    },
+    {
+      name: "plugins-update-all",
+      description: "Update all plugins",
+    },
+    {
       name: "activation",
       description: "Set group activation",
       getArgumentCompletions: (prefix) =>
@@ -140,6 +234,14 @@ export function getSlashCommands(options: SlashCommandOptions = {}): SlashComman
 
 export function helpText(options: SlashCommandOptions = {}): string {
   const thinkLevels = formatThinkingLevels(options.provider, options.model, "|");
+  const hookCount = globalHookExecutor.getHooks().length;
+
+  // Get teleport status
+  const teleportInfo = getTeleportedSessionInfo();
+  const teleportStatus = teleportInfo?.isTeleported
+    ? ` (teleported from ${teleportInfo.sessionId})`
+    : "";
+
   return [
     "Slash commands:",
     "/help",
@@ -154,10 +256,20 @@ export function helpText(options: SlashCommandOptions = {}): string {
     "/usage <off|tokens|full>",
     "/elevated <on|off|ask|full>",
     "/elev <on|off|ask|full>",
+    "/effort <low|medium|high|max>",
+    "/hooks",
+    "/hooks-status",
+    "/teleport <session-id>",
+    "/teleport-status",
+    "/teleport-complete",
+    "/plugins-update",
+    "/plugins-update-all",
     "/activation <mention|always>",
     "/new or /reset",
     "/abort",
     "/settings",
     "/exit",
+    "",
+    `Active hooks: ${hookCount}${teleportStatus}`,
   ].join("\n");
 }

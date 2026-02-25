@@ -16,6 +16,11 @@ import {
   formatReasoningMessage,
   promoteThinkingTagsToBlocks,
 } from "./pi-embedded-utils.js";
+import { getStreamingEmitter, StreamingContext } from "./streaming-events.js";
+import { generateEventId } from "./streaming-events.types.js";
+
+// Global streaming context for tracking message state
+const streamingContext = new StreamingContext();
 
 const stripTrailingDirective = (text: string): string => {
   const openIndex = text.lastIndexOf("[[");
@@ -39,13 +44,36 @@ export function handleMessageStart(
   }
 
   // KNOWN: Resetting at `text_end` is unsafe (late/duplicate end events).
-  // ASSUME: `message_start` is the only reliable boundary for “new assistant message begins”.
+  // ASSUME: `message_start` is the only reliable boundary for "new assistant message begins".
   // Start-of-message is a safer reset point than message_end: some providers
   // may deliver late text_end updates after message_end, which would otherwise
   // re-trigger block replies.
   ctx.resetAssistantMessageState(ctx.state.assistantTexts.length);
   // Use assistant message_start as the earliest "writing" signal for typing.
   void ctx.params.onAssistantMessageStart?.();
+
+  // EloClaw: Emit streaming event for message start
+  const sessionId = (ctx.params.session as { id?: string }).id || "default";
+  const emitter = getStreamingEmitter(sessionId);
+  const messageId = generateEventId();
+  streamingContext.startMessage(messageId, "assistant", 0);
+  emitter.emitEvent({
+    type: "stream_event",
+    event: {
+      type: "message_start",
+      message: {
+        id: messageId,
+        role: "assistant",
+        model: "unknown",
+        content: [],
+        stop_reason: null,
+        stop_sequence: null,
+        usage: { input_tokens: 0, output_tokens: 0 },
+      },
+    },
+    uuid: generateEventId(),
+    session_id: sessionId,
+  });
 }
 
 export function handleMessageUpdate(
@@ -107,6 +135,24 @@ export function handleMessageUpdate(
     } else {
       ctx.state.blockBuffer += chunk;
     }
+
+    // EloClaw: Emit content_block_delta for streaming
+    const sessionId = (ctx.params.session as { id?: string }).id || "default";
+    const emitter = getStreamingEmitter(sessionId);
+    streamingContext.appendText(chunk);
+    emitter.emitEvent({
+      type: "stream_event",
+      event: {
+        type: "content_block_delta",
+        index: 0,
+        delta: {
+          type: "text_delta",
+          text: chunk,
+        },
+      },
+      uuid: generateEventId(),
+      session_id: sessionId,
+    });
   }
 
   if (ctx.state.streamReasoning) {
@@ -197,6 +243,42 @@ export function handleMessageEnd(
     return;
   }
 
+  // EloClaw: Emit message_stop streaming event
+  const sessionId = (ctx.params.session as { id?: string }).id || "default";
+  const emitter = getStreamingEmitter(sessionId);
+  const messageInfo = streamingContext.getMessageInfo();
+  const ttftMs = streamingContext.getTtftMs();
+
+  // Emit message_delta with stop_reason
+  emitter.emitEvent({
+    type: "stream_event",
+    event: {
+      type: "message_delta",
+      delta: {
+        stop_reason: "end_turn",
+        stop_sequence: null,
+      },
+      usage: {
+        output_tokens: messageInfo.outputTokens,
+      },
+    },
+    uuid: generateEventId(),
+    session_id: sessionId,
+  });
+
+  // Emit message_stop
+  emitter.emitEvent({
+    type: "stream_event",
+    event: {
+      type: "message_stop",
+    },
+    uuid: generateEventId(),
+    session_id: sessionId,
+  });
+
+  // Reset context for next message
+  streamingContext.reset();
+
   const assistantMessage = msg;
   promoteThinkingTagsToBlocks(assistantMessage);
 
@@ -231,6 +313,31 @@ export function handleMessageEnd(
       cleanedText = parsedFallback.text ?? rawCandidate;
       mediaUrls = parsedFallback.mediaUrls;
       hasMedia = Boolean(mediaUrls && mediaUrls.length > 0);
+    }
+  }
+
+  // Fallback for reasoning-only responses (e.g., GLM-5 when tokens are exhausted during thinking).
+  // When no text content exists but thinking blocks are present, promote thinking to visible text.
+  // Check both structured thinking blocks AND text-based <think> tags (some providers use either).
+  if (!cleanedText && !hasMedia) {
+    const thinkingFallback =
+      extractAssistantThinking(assistantMessage) ||
+      extractThinkingFromTaggedText(rawText) ||
+      // Last resort: check the streaming delta buffer for thinking tags
+      extractThinkingFromTaggedText(ctx.state.deltaBuffer);
+    if (thinkingFallback) {
+      cleanedText = `_Thinking:_\n${thinkingFallback}`;
+    }
+  }
+
+  // Ultimate fallback: if still no content but we have raw delta buffer content, show it
+  // This catches edge cases where models stream content but don't emit structured blocks
+  if (!cleanedText && !hasMedia && ctx.state.deltaBuffer.trim()) {
+    const bufferContent = ctx.state.deltaBuffer.trim();
+    // Only use if it looks like actual content (not just tags)
+    const strippedBuffer = bufferContent.replace(/<[^>]+>/g, "").trim();
+    if (strippedBuffer.length > 10) {
+      cleanedText = strippedBuffer;
     }
   }
 
@@ -368,4 +475,16 @@ export function handleMessageEnd(
   ctx.state.blockState.inlineCode = createInlineCodeState();
   ctx.state.lastStreamedAssistant = undefined;
   ctx.state.lastStreamedAssistantCleaned = undefined;
+
+  // Emit "answer" event for briefing tracking (answer count + auto-compact after N answers)
+  if (cleanedText) {
+    emitAgentEvent({
+      runId: ctx.params.runId,
+      stream: "answer",
+      data: {
+        text: cleanedText,
+        timestamp: Date.now(),
+      },
+    });
+  }
 }

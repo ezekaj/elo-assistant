@@ -26,6 +26,7 @@ export function registerAgentCommands(program: Command, args: { agentChannelOpti
     .option("--session-id <id>", "Use an explicit session id")
     .option("--agent <id>", "Agent id (overrides routing bindings)")
     .option("--thinking <level>", "Thinking level: off | minimal | low | medium | high")
+    .option("--effort <level>", "Effort level: low | medium | high | max (Opus 4.5/4.6 only)")
     .option("--verbose <on|off>", "Persist agent verbose level for the session")
     .option(
       "--channel <channel>",

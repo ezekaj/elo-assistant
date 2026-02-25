@@ -11,6 +11,11 @@ import {
   sanitizeToolResult,
 } from "./pi-embedded-subscribe.tools.js";
 import { inferToolMetaFromArgs } from "./pi-embedded-utils.js";
+import {
+  getOlapAnalytics,
+  publishEvent,
+  updatePredictiveContext,
+} from "./predictive-integration.js";
 import { normalizeToolName } from "./tool-policy.js";
 
 function extendExecMeta(toolName: string, args: unknown, meta?: string): string | undefined {
@@ -64,6 +69,7 @@ export async function handleToolExecutionStart(
 
   const meta = extendExecMeta(toolName, args, inferToolMetaFromArgs(toolName, args));
   ctx.state.toolMetaById.set(toolCallId, meta);
+  ctx.state.toolStartTimes.set(toolCallId, Date.now());
   ctx.log.debug(
     `embedded run tool start: runId=${ctx.params.runId} tool=${toolName} toolCallId=${toolCallId}`,
   );
@@ -226,4 +232,47 @@ export function handleToolExecutionEnd(
       ctx.emitToolOutput(toolName, meta, outputText);
     }
   }
+
+  // Track tool execution in OLAP analytics
+  const startTime = ctx.state.toolStartTimes.get(toolCallId);
+  ctx.state.toolStartTimes.delete(toolCallId);
+  const durationMs = startTime ? Date.now() - startTime : 0;
+  const errorMessage = isToolError ? extractToolErrorMessage(sanitizedResult) : undefined;
+
+  const olapAnalytics = getOlapAnalytics();
+  if (olapAnalytics && startTime) {
+    olapAnalytics.track({
+      tool: toolName,
+      success: !isToolError,
+      durationMs,
+      error: errorMessage,
+      timestamp: Date.now(),
+    });
+  }
+
+  // Publish tool execution event to EventMesh
+  void publishEvent("tool.executed", {
+    tool: toolName,
+    toolCallId,
+    success: !isToolError,
+    durationMs,
+    error: errorMessage,
+    runId: ctx.params.runId,
+    timestamp: Date.now(),
+  });
+
+  // Update predictive context with recent tool activity
+  updatePredictiveContext({
+    recentActivity: [
+      {
+        type: `tool:${toolName}`,
+        timestamp: Date.now(),
+        data: {
+          success: !isToolError,
+          durationMs,
+          error: errorMessage,
+        },
+      },
+    ],
+  });
 }

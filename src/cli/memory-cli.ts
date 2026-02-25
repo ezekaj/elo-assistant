@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { resolveDefaultAgentId } from "../agents/agent-scope.js";
+import { scheduleInterval, cancelInterval } from "../agents/timer-wheel.js";
 import { loadConfig } from "../config/config.js";
 import { resolveStateDir } from "../config/paths.js";
 import { resolveSessionTranscriptsDirForAgent } from "../config/sessions/paths.js";
@@ -16,6 +17,8 @@ import { colorize, isRich, theme } from "../terminal/theme.js";
 import { shortenHomeInString, shortenHomePath } from "../utils.js";
 import { formatErrorMessage, withManager } from "./cli-utils.js";
 import { withProgress, withProgressTotals } from "./progress.js";
+
+let memoryIndexProgressIntervalCounter = 0;
 
 type MemoryCommandOptions = {
   agent?: string;
@@ -606,9 +609,10 @@ export function registerMemoryCli(program: Command) {
                   fallback: opts.verbose ? "line" : undefined,
                 },
                 async (update, progress) => {
-                  const interval = setInterval(() => {
+                  const progressIntervalId = `memory-index-progress-${++memoryIndexProgressIntervalCounter}`;
+                  scheduleInterval(progressIntervalId, 1000, () => {
                     progress.setLabel(buildLabel());
-                  }, 1000);
+                  });
                   try {
                     await syncFn({
                       reason: "cli",
@@ -628,7 +632,7 @@ export function registerMemoryCli(program: Command) {
                       },
                     });
                   } finally {
-                    clearInterval(interval);
+                    cancelInterval(progressIntervalId);
                   }
                 },
               );

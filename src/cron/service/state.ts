@@ -44,7 +44,7 @@ export type CronServiceDepsInternal = Omit<CronServiceDeps, "nowMs"> & {
 export type CronServiceState = {
   deps: CronServiceDepsInternal;
   store: CronStoreFile | null;
-  timer: NodeJS.Timeout | null;
+  timerActive: boolean;
   running: boolean;
   op: Promise<unknown>;
   warnedDisabled: boolean;
@@ -56,7 +56,7 @@ export function createCronServiceState(deps: CronServiceDeps): CronServiceState 
   return {
     deps: { ...deps, nowMs: deps.nowMs ?? (() => Date.now()) },
     store: null,
-    timer: null,
+    timerActive: false,
     running: false,
     op: Promise.resolve(),
     warnedDisabled: false,

@@ -1,3 +1,4 @@
+import { scheduleInterval, cancelInterval } from "../agents/timer-wheel.js";
 import { logDebug, logWarn } from "../logger.js";
 import { getLogger } from "../logging.js";
 import { ignoreCiaoCancellationRejection } from "./bonjour-ciao.js";
@@ -215,7 +216,8 @@ export async function startGatewayBonjourAdvertiser(
   // Watchdog: if we ever end up in an unannounced state (e.g. after sleep/wake or
   // interface churn), try to re-advertise instead of requiring a full gateway restart.
   const lastRepairAttempt = new Map<string, number>();
-  const watchdog = setInterval(() => {
+  const watchdogTimerId = `bonjour-watchdog-${opts.gatewayPort}`;
+  scheduleInterval(watchdogTimerId, 60_000, () => {
     for (const { label, svc } of services) {
       const stateUnknown = (svc as { serviceState?: unknown }).serviceState;
       if (typeof stateUnknown !== "string") {
@@ -256,12 +258,11 @@ export async function startGatewayBonjourAdvertiser(
         );
       }
     }
-  }, 60_000);
-  watchdog.unref?.();
+  });
 
   return {
     stop: async () => {
-      clearInterval(watchdog);
+      cancelInterval(watchdogTimerId);
       for (const { svc } of services) {
         try {
           await svc.destroy();

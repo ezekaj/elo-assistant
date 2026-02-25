@@ -1,3 +1,4 @@
+import { scheduleInterval, cancelInterval } from "../agents/timer-wheel.js";
 import { emitDiagnosticEvent } from "../infra/diagnostic-events.js";
 import { createSubsystemLogger } from "./subsystem.js";
 
@@ -295,13 +296,15 @@ export function logActiveRuns() {
   markActivity();
 }
 
-let heartbeatInterval: NodeJS.Timeout | null = null;
+let heartbeatIntervalActive = false;
+const HEARTBEAT_TIMER_ID = "diagnostic-heartbeat";
 
 export function startDiagnosticHeartbeat() {
-  if (heartbeatInterval) {
+  if (heartbeatIntervalActive) {
     return;
   }
-  heartbeatInterval = setInterval(() => {
+  heartbeatIntervalActive = true;
+  scheduleInterval(HEARTBEAT_TIMER_ID, 30_000, () => {
     const now = Date.now();
     const activeCount = Array.from(sessionStates.values()).filter(
       (s) => s.state === "processing",
@@ -352,14 +355,13 @@ export function startDiagnosticHeartbeat() {
         });
       }
     }
-  }, 30_000);
-  heartbeatInterval.unref?.();
+  });
 }
 
 export function stopDiagnosticHeartbeat() {
-  if (heartbeatInterval) {
-    clearInterval(heartbeatInterval);
-    heartbeatInterval = null;
+  if (heartbeatIntervalActive) {
+    cancelInterval(HEARTBEAT_TIMER_ID);
+    heartbeatIntervalActive = false;
   }
 }
 

@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { forceKillTree } from "./kill-tree.js";
 
 function resolvePowerShellPath(): string {
   const systemRoot = process.env.SystemRoot || process.env.WINDIR;
@@ -91,25 +92,6 @@ export function sanitizeBinaryOutput(text: string): string {
 }
 
 export function killProcessTree(pid: number): void {
-  if (process.platform === "win32") {
-    try {
-      spawn("taskkill", ["/F", "/T", "/PID", String(pid)], {
-        stdio: "ignore",
-        detached: true,
-      });
-    } catch {
-      // ignore errors if taskkill fails
-    }
-    return;
-  }
-
-  try {
-    process.kill(-pid, "SIGKILL");
-  } catch {
-    try {
-      process.kill(pid, "SIGKILL");
-    } catch {
-      // process already dead
-    }
-  }
+  // Use optimized forceKillTree with pgid support
+  void forceKillTree(pid);
 }

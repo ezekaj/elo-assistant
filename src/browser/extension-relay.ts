@@ -4,6 +4,7 @@ import type { Duplex } from "node:stream";
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:http";
 import WebSocket, { WebSocketServer } from "ws";
+import { scheduleInterval, cancelInterval } from "../agents/timer-wheel.js";
 import { rawDataToString } from "../infra/ws.js";
 
 type CdpCommand = {
@@ -175,6 +176,7 @@ function rejectUpgrade(socket: Duplex, status: number, bodyText: string) {
 
 const serversByPort = new Map<number, ChromeExtensionRelayServer>();
 const relayAuthByPort = new Map<number, string>();
+let extensionConnectionCounter = 0;
 
 function relayAuthTokenForUrl(url: string): string | null {
   try {
@@ -530,13 +532,15 @@ export async function ensureChromeExtensionRelayServer(opts: {
 
   wssExtension.on("connection", (ws) => {
     extensionWs = ws;
+    const connectionId = ++extensionConnectionCounter;
+    const pingTimerId = `extension-relay-ping-${info.port}-${connectionId}`;
 
-    const ping = setInterval(() => {
+    scheduleInterval(pingTimerId, 5000, () => {
       if (ws.readyState !== WebSocket.OPEN) {
         return;
       }
       ws.send(JSON.stringify({ method: "ping" } satisfies ExtensionPingMessage));
-    }, 5000);
+    });
 
     ws.on("message", (data) => {
       let parsed: ExtensionMessage | null = null;
@@ -639,7 +643,7 @@ export async function ensureChromeExtensionRelayServer(opts: {
     });
 
     ws.on("close", () => {
-      clearInterval(ping);
+      cancelInterval(pingTimerId);
       extensionWs = null;
       for (const [, pending] of pendingExtension) {
         clearTimeout(pending.timer);

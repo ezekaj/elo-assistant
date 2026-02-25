@@ -15,6 +15,12 @@ export type ModelCompatConfig = {
 
 export type ModelProviderAuthMode = "api-key" | "aws-sdk" | "oauth" | "token";
 
+/**
+ * Effort level configuration for models
+ * Matches Claude Code's effort level support
+ */
+export type EffortLevel = "low" | "medium" | "high" | "max";
+
 export type ModelDefinitionConfig = {
   id: string;
   name: string;
@@ -31,6 +37,14 @@ export type ModelDefinitionConfig = {
   maxTokens: number;
   headers?: Record<string, string>;
   compat?: ModelCompatConfig;
+
+  // NEW: Effort level support
+  /** Whether this model supports effort levels */
+  supportsEffort?: boolean;
+  /** Available effort levels for this model */
+  supportedEffortLevels?: EffortLevel[];
+  /** Default effort level for this model */
+  defaultEffort?: EffortLevel;
 };
 
 export type ModelProviderConfig = {

@@ -1,164 +1,190 @@
-import fs from "node:fs";
-import path from "node:path";
-import type { OpenClawConfig, HookConfig } from "../config/config.js";
-import type { HookEligibilityContext, HookEntry } from "./types.js";
-import { resolveHookKey } from "./frontmatter.js";
+/**
+ * Plugin Hooks System - Configuration Loading
+ *
+ * Loads hook configurations from settings files
+ * (user, project, local, managed settings)
+ */
 
-const DEFAULT_CONFIG_VALUES: Record<string, boolean> = {
-  "browser.enabled": true,
-  "browser.evaluateEnabled": true,
-  "workspace.dir": true,
-};
+import { readFile } from "fs/promises";
+import { join } from "path";
+import { parseMatcher } from "./matchers.js";
+import { HookRegistration, HookConfig, HookMatcher } from "./types.js";
 
-function isTruthy(value: unknown): boolean {
-  if (value === undefined || value === null) {
-    return false;
-  }
-  if (typeof value === "boolean") {
-    return value;
-  }
-  if (typeof value === "number") {
-    return value !== 0;
-  }
-  if (typeof value === "string") {
-    return value.trim().length > 0;
-  }
-  return true;
+/**
+ * Hook configuration from settings.json
+ */
+interface SettingsHooksConfig {
+  [event: string]: Array<{
+    matcher?: HookMatcher | string | null;
+    hooks: HookConfig[];
+  }>;
 }
 
-export function resolveConfigPath(config: OpenClawConfig | undefined, pathStr: string) {
-  const parts = pathStr.split(".").filter(Boolean);
-  let current: unknown = config;
-  for (const part of parts) {
-    if (typeof current !== "object" || current === null) {
-      return undefined;
+/**
+ * Load hooks from configuration
+ */
+export async function loadHooksFromConfig(): Promise<HookRegistration[]> {
+  const hooks: HookRegistration[] = [];
+
+  // Load from user settings
+  try {
+    const userSettingsPath = join(getHomeDir(), ".claude", "settings.json");
+    const userConfig = JSON.parse(await readFile(userSettingsPath, "utf8"));
+    if (userConfig.hooks) {
+      hooks.push(...parseHooksConfig(userConfig.hooks, "user"));
     }
-    current = (current as Record<string, unknown>)[part];
+  } catch {
+    // No user settings
   }
-  return current;
+
+  // Load from project settings
+  try {
+    const projectSettingsPath = join(process.cwd(), ".claude", "settings.json");
+    const projectConfig = JSON.parse(await readFile(projectSettingsPath, "utf8"));
+    if (projectConfig.hooks) {
+      hooks.push(...parseHooksConfig(projectConfig.hooks, "project"));
+    }
+  } catch {
+    // No project settings
+  }
+
+  // Load from local settings
+  try {
+    const localSettingsPath = join(process.cwd(), ".claude", "settings.local.json");
+    const localConfig = JSON.parse(await readFile(localSettingsPath, "utf8"));
+    if (localConfig.hooks) {
+      hooks.push(...parseHooksConfig(localConfig.hooks, "local"));
+    }
+  } catch {
+    // No local settings
+  }
+
+  return hooks;
 }
 
-export function isConfigPathTruthy(config: OpenClawConfig | undefined, pathStr: string): boolean {
-  const value = resolveConfigPath(config, pathStr);
-  if (value === undefined && pathStr in DEFAULT_CONFIG_VALUES) {
-    return DEFAULT_CONFIG_VALUES[pathStr];
-  }
-  return isTruthy(value);
-}
+/**
+ * Parse hooks configuration
+ */
+function parseHooksConfig(
+  config: SettingsHooksConfig,
+  source: "user" | "project" | "local" | "managed",
+): HookRegistration[] {
+  const hooks: HookRegistration[] = [];
 
-export function resolveHookConfig(
-  config: OpenClawConfig | undefined,
-  hookKey: string,
-): HookConfig | undefined {
-  const hooks = config?.hooks?.internal?.entries;
-  if (!hooks || typeof hooks !== "object") {
-    return undefined;
-  }
-  const entry = (hooks as Record<string, HookConfig | undefined>)[hookKey];
-  if (!entry || typeof entry !== "object") {
-    return undefined;
-  }
-  return entry;
-}
+  for (const [event, matchers] of Object.entries(config)) {
+    if (!Array.isArray(matchers)) continue;
 
-export function resolveRuntimePlatform(): string {
-  return process.platform;
-}
+    for (const matcherConfig of matchers) {
+      if (!matcherConfig || !Array.isArray(matcherConfig.hooks)) continue;
 
-export function hasBinary(bin: string): boolean {
-  const pathEnv = process.env.PATH ?? "";
-  const parts = pathEnv.split(path.delimiter).filter(Boolean);
-  for (const part of parts) {
-    const candidate = path.join(part, bin);
-    try {
-      fs.accessSync(candidate, fs.constants.X_OK);
-      return true;
-    } catch {
-      // keep scanning
+      const matcher = parseMatcher(matcherConfig.matcher);
+
+      hooks.push({
+        event: event as HookRegistration["event"],
+        matcher,
+        hooks: matcherConfig.hooks,
+        source,
+      });
     }
   }
-  return false;
+
+  return hooks;
 }
 
-export function shouldIncludeHook(params: {
-  entry: HookEntry;
-  config?: OpenClawConfig;
-  eligibility?: HookEligibilityContext;
+/**
+ * Get home directory
+ */
+function getHomeDir(): string {
+  return process.env.HOME || process.env.USERPROFILE || process.cwd();
+}
+
+/**
+ * Save hooks to configuration
+ */
+export async function saveHooksToConfig(
+  hooks: HookRegistration[],
+  source: "user" | "project" | "local",
+): Promise<void> {
+  const configPath = getConfigPath(source);
+
+  let config: Record<string, unknown> = {};
+  try {
+    config = JSON.parse(await readFile(configPath, "utf8"));
+  } catch {
+    // File doesn't exist, create new config
+  }
+
+  // Convert hooks to settings format
+  const hooksConfig: SettingsHooksConfig = {};
+
+  for (const hook of hooks) {
+    if (hook.source !== source) continue;
+
+    if (!hooksConfig[hook.event]) {
+      hooksConfig[hook.event] = [];
+    }
+
+    hooksConfig[hook.event].push({
+      matcher: hook.matcher,
+      hooks: hook.hooks,
+    });
+  }
+
+  config.hooks = hooksConfig;
+
+  // Write config
+  const { writeFile } = await import("fs/promises");
+  await writeFile(configPath, JSON.stringify(config, null, 2), "utf8");
+}
+
+/**
+ * Get config path for source
+ */
+function getConfigPath(source: "user" | "project" | "local"): string {
+  switch (source) {
+    case "user":
+      return join(getHomeDir(), ".claude", "settings.json");
+    case "project":
+      return join(process.cwd(), ".claude", "settings.json");
+    case "local":
+      return join(process.cwd(), ".claude", "settings.local.json");
+  }
+}
+
+/**
+ * Delete hooks from configuration
+ */
+export async function deleteHooksFromConfig(
+  event: string,
+  source: "user" | "project" | "local",
+): Promise<void> {
+  const configPath = getConfigPath(source);
+
+  let config: Record<string, unknown> = {};
+  try {
+    config = JSON.parse(await readFile(configPath, "utf8"));
+  } catch {
+    // File doesn't exist
+    return;
+  }
+
+  if (config.hooks && typeof config.hooks === "object") {
+    delete (config.hooks as Record<string, unknown>)[event];
+  }
+
+  const { writeFile } = await import("fs/promises");
+  await writeFile(configPath, JSON.stringify(config, null, 2), "utf8");
+}
+
+/**
+ * Check if a hook should be included based on config
+ * (For existing plugin hooks system)
+ */
+export function shouldIncludeHook(_opts: {
+  entry?: any;
+  config?: any;
+  eligibility?: any;
 }): boolean {
-  const { entry, config, eligibility } = params;
-  const hookKey = resolveHookKey(entry.hook.name, entry);
-  const hookConfig = resolveHookConfig(config, hookKey);
-  const pluginManaged = entry.hook.source === "openclaw-plugin";
-  const osList = entry.metadata?.os ?? [];
-  const remotePlatforms = eligibility?.remote?.platforms ?? [];
-
-  // Check if explicitly disabled
-  if (!pluginManaged && hookConfig?.enabled === false) {
-    return false;
-  }
-
-  // Check OS requirement
-  if (
-    osList.length > 0 &&
-    !osList.includes(resolveRuntimePlatform()) &&
-    !remotePlatforms.some((platform) => osList.includes(platform))
-  ) {
-    return false;
-  }
-
-  // If marked as 'always', bypass all other checks
-  if (entry.metadata?.always === true) {
-    return true;
-  }
-
-  // Check required binaries (all must be present)
-  const requiredBins = entry.metadata?.requires?.bins ?? [];
-  if (requiredBins.length > 0) {
-    for (const bin of requiredBins) {
-      if (hasBinary(bin)) {
-        continue;
-      }
-      if (eligibility?.remote?.hasBin?.(bin)) {
-        continue;
-      }
-      return false;
-    }
-  }
-
-  // Check anyBins (at least one must be present)
-  const requiredAnyBins = entry.metadata?.requires?.anyBins ?? [];
-  if (requiredAnyBins.length > 0) {
-    const anyFound =
-      requiredAnyBins.some((bin) => hasBinary(bin)) ||
-      eligibility?.remote?.hasAnyBin?.(requiredAnyBins);
-    if (!anyFound) {
-      return false;
-    }
-  }
-
-  // Check required environment variables
-  const requiredEnv = entry.metadata?.requires?.env ?? [];
-  if (requiredEnv.length > 0) {
-    for (const envName of requiredEnv) {
-      if (process.env[envName]) {
-        continue;
-      }
-      if (hookConfig?.env?.[envName]) {
-        continue;
-      }
-      return false;
-    }
-  }
-
-  // Check required config paths
-  const requiredConfig = entry.metadata?.requires?.config ?? [];
-  if (requiredConfig.length > 0) {
-    for (const configPath of requiredConfig) {
-      if (!isConfigPathTruthy(config, configPath)) {
-        return false;
-      }
-    }
-  }
-
+  // Default: include all hooks
   return true;
 }

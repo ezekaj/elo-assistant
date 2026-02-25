@@ -60,7 +60,9 @@ function buildInjectedWorkspaceFiles(params: {
 function buildToolsEntries(tools: AgentTool[]): SessionSystemPromptReport["tools"]["entries"] {
   return tools.map((tool) => {
     const name = tool.name;
-    const summary = tool.description?.trim() || tool.label?.trim() || "";
+    const desc = typeof tool.description === "string" ? tool.description.trim() : "";
+    const label = typeof tool.label === "string" ? tool.label.trim() : "";
+    const summary = desc || label;
     const summaryChars = summary.length;
     const schemaChars = (() => {
       if (!tool.parameters || typeof tool.parameters !== "object") {

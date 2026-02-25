@@ -8,6 +8,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import type { OpenClawConfig } from "../config/config.js";
 import { hasBinary } from "../agents/skills.js";
+import { scheduleInterval, cancelInterval } from "../agents/timer-wheel.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { runCommandWithTimeout } from "../process/exec.js";
 import { ensureTailscaleEndpoint } from "./gmail-setup-utils.js";
@@ -27,7 +28,8 @@ export function isAddressInUseError(line: string): boolean {
 }
 
 let watcherProcess: ChildProcess | null = null;
-let renewInterval: ReturnType<typeof setInterval> | null = null;
+let renewIntervalActive = false;
+const RENEW_TIMER_ID = "gmail-watcher-renew";
 let shuttingDown = false;
 let currentConfig: GmailHookRuntimeConfig | null = null;
 
@@ -187,12 +189,13 @@ export async function startGmailWatcher(cfg: OpenClawConfig): Promise<GmailWatch
 
   // Set up renewal interval
   const renewMs = runtimeConfig.renewEveryMinutes * 60_000;
-  renewInterval = setInterval(() => {
+  renewIntervalActive = true;
+  scheduleInterval(RENEW_TIMER_ID, renewMs, () => {
     if (shuttingDown) {
       return;
     }
     void startGmailWatch(runtimeConfig);
-  }, renewMs);
+  });
 
   log.info(
     `gmail watcher started for ${runtimeConfig.account} (renew every ${runtimeConfig.renewEveryMinutes}m)`,
@@ -207,9 +210,9 @@ export async function startGmailWatcher(cfg: OpenClawConfig): Promise<GmailWatch
 export async function stopGmailWatcher(): Promise<void> {
   shuttingDown = true;
 
-  if (renewInterval) {
-    clearInterval(renewInterval);
-    renewInterval = null;
+  if (renewIntervalActive) {
+    cancelInterval(RENEW_TIMER_ID);
+    renewIntervalActive = false;
   }
 
   if (watcherProcess) {

@@ -125,6 +125,7 @@
     "croner": "^10.0.1",
     "discord-api-types": "^0.38.38",
     "dotenv": "^17.2.3",
+    "execa": "^9.6.1",
     "express": "^5.2.1",
     "file-type": "^21.3.0",
     "grammy": "^1.39.3",
@@ -137,7 +138,9 @@
     "markdown-it": "^14.1.0",
     "node-edge-tts": "^1.2.9",
     "osc-progress": "^0.3.0",
+    "pdf-parse": "^2.4.5",
     "pdfjs-dist": "^5.4.624",
+    "playwright": "^1.58.1",
     "playwright-core": "1.58.1",
     "proper-lockfile": "^4.1.2",
     "qrcode-terminal": "^0.12.0",
@@ -207,7 +210,10 @@
       "node-llama-cpp",
       "protobufjs",
       "sharp"
-    ]
+    ],
+    "patchedDependencies": {
+      "@mariozechner/pi-ai@0.51.3": "patches/@mariozechner__pi-ai@0.51.3.patch"
+    }
   },
   "vitest": {
     "coverage": {

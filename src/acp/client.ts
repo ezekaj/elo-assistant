@@ -125,6 +125,10 @@ export async function createAcpClient(opts: AcpClientOptions = {}): Promise<AcpC
     clientCapabilities: {
       fs: { readTextFile: true, writeTextFile: true },
       terminal: true,
+      // Sampling capability - matches Claude Code (Lines 14670, 14687)
+      sampling: {
+        tools: true, // Can handle tools during sampling
+      },
     },
     clientInfo: { name: "openclaw-acp-client", version: "1.0.0" },
   });

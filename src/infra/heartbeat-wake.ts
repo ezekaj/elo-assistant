@@ -1,3 +1,5 @@
+import { scheduleTimeout } from "../agents/timer-wheel.js";
+
 export type HeartbeatRunResult =
   | { status: "ran"; durationMs: number }
   | { status: "skipped"; reason: string }
@@ -9,17 +11,19 @@ let handler: HeartbeatWakeHandler | null = null;
 let pendingReason: string | null = null;
 let scheduled = false;
 let running = false;
-let timer: NodeJS.Timeout | null = null;
+let timerActive = false;
 
 const DEFAULT_COALESCE_MS = 250;
 const DEFAULT_RETRY_MS = 1_000;
+const HEARTBEAT_WAKE_TIMER_ID = "heartbeat-wake";
 
 function schedule(coalesceMs: number) {
-  if (timer) {
+  if (timerActive) {
     return;
   }
-  timer = setTimeout(async () => {
-    timer = null;
+  timerActive = true;
+  scheduleTimeout(HEARTBEAT_WAKE_TIMER_ID, coalesceMs, async () => {
+    timerActive = false;
     scheduled = false;
     const active = handler;
     if (!active) {
@@ -51,8 +55,7 @@ function schedule(coalesceMs: number) {
         schedule(coalesceMs);
       }
     }
-  }, coalesceMs);
-  timer.unref?.();
+  });
 }
 
 export function setHeartbeatWakeHandler(next: HeartbeatWakeHandler | null) {
@@ -72,5 +75,5 @@ export function hasHeartbeatWakeHandler() {
 }
 
 export function hasPendingHeartbeatWake() {
-  return pendingReason !== null || Boolean(timer) || scheduled;
+  return pendingReason !== null || timerActive || scheduled;
 }

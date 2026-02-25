@@ -57,6 +57,7 @@ import {
 } from "../../skills.js";
 import { buildSystemPromptParams } from "../../system-prompt-params.js";
 import { buildSystemPromptReport } from "../../system-prompt-report.js";
+import { scheduleTimeout, cancelTimeout } from "../../timer-wheel.js";
 import { resolveTranscriptPolicy } from "../../transcript-policy.js";
 import { DEFAULT_BOOTSTRAP_FILENAME } from "../../workspace.js";
 import { isAbortError } from "../abort.js";
@@ -659,31 +660,35 @@ export async function runEmbeddedAttempt(
       };
       setActiveEmbeddedRun(params.sessionId, queueHandle);
 
-      let abortWarnTimer: NodeJS.Timeout | undefined;
+      let abortWarnTimerActive = false;
+      let abortTimerActive = false;
+      const abortTimerId = `embedded-abort-${params.runId}`;
+      const abortWarnTimerId = `embedded-abort-warn-${params.runId}`;
       const isProbeSession = params.sessionId?.startsWith("probe-") ?? false;
-      const abortTimer = setTimeout(
-        () => {
-          if (!isProbeSession) {
-            log.warn(
-              `embedded run timeout: runId=${params.runId} sessionId=${params.sessionId} timeoutMs=${params.timeoutMs}`,
-            );
-          }
-          abortRun(true);
-          if (!abortWarnTimer) {
-            abortWarnTimer = setTimeout(() => {
-              if (!activeSession.isStreaming) {
-                return;
-              }
-              if (!isProbeSession) {
-                log.warn(
-                  `embedded run abort still streaming: runId=${params.runId} sessionId=${params.sessionId}`,
-                );
-              }
-            }, 10_000);
-          }
-        },
-        Math.max(1, params.timeoutMs),
-      );
+      abortTimerActive = true;
+      scheduleTimeout(abortTimerId, Math.max(1, params.timeoutMs), () => {
+        abortTimerActive = false;
+        if (!isProbeSession) {
+          log.warn(
+            `embedded run timeout: runId=${params.runId} sessionId=${params.sessionId} timeoutMs=${params.timeoutMs}`,
+          );
+        }
+        abortRun(true);
+        if (!abortWarnTimerActive) {
+          abortWarnTimerActive = true;
+          scheduleTimeout(abortWarnTimerId, 10_000, () => {
+            abortWarnTimerActive = false;
+            if (!activeSession.isStreaming) {
+              return;
+            }
+            if (!isProbeSession) {
+              log.warn(
+                `embedded run abort still streaming: runId=${params.runId} sessionId=${params.sessionId}`,
+              );
+            }
+          });
+        }
+      });
 
       let messagesSnapshot: AgentMessage[] = [];
       let sessionIdUsed = activeSession.sessionId;
@@ -742,9 +747,32 @@ export async function runEmbeddedAttempt(
           messages: activeSession.messages,
         });
 
-        // Repair orphaned trailing user messages so new prompts don't violate role ordering.
+        // Handle trailing user messages: merge with new prompt rather than removing.
+        // This preserves rapid-fire user messages (e.g., user sends "Hello" then quickly "How are you?").
         const leafEntry = sessionManager.getLeafEntry();
         if (leafEntry?.type === "message" && leafEntry.message.role === "user") {
+          // Extract the existing user message content
+          const existingContent = leafEntry.message.content;
+          const existingText =
+            typeof existingContent === "string"
+              ? existingContent
+              : Array.isArray(existingContent)
+                ? existingContent
+                    .filter((c): c is { type: "text"; text: string } => c?.type === "text")
+                    .map((c) => c.text)
+                    .join("\n")
+                : "";
+
+          if (existingText.trim()) {
+            // Merge: prepend the existing user message to the new prompt
+            effectivePrompt = `${existingText}\n\n${effectivePrompt}`;
+            log.info(
+              `Merged orphaned user message with new prompt. ` +
+                `runId=${params.runId} sessionId=${params.sessionId}`,
+            );
+          }
+
+          // Remove the orphaned user message from history (it's now merged into prompt)
           if (leafEntry.parentId) {
             sessionManager.branch(leafEntry.parentId);
           } else {
@@ -752,10 +780,6 @@ export async function runEmbeddedAttempt(
           }
           const sessionContext = sessionManager.buildSessionContext();
           activeSession.agent.replaceMessages(sessionContext.messages);
-          log.warn(
-            `Removed orphaned user message to prevent consecutive user turns. ` +
-              `runId=${params.runId} sessionId=${params.sessionId}`,
-          );
         }
 
         try {
@@ -860,9 +884,13 @@ export async function runEmbeddedAttempt(
             });
         }
       } finally {
-        clearTimeout(abortTimer);
-        if (abortWarnTimer) {
-          clearTimeout(abortWarnTimer);
+        if (abortTimerActive) {
+          cancelTimeout(abortTimerId);
+          abortTimerActive = false;
+        }
+        if (abortWarnTimerActive) {
+          cancelTimeout(abortWarnTimerId);
+          abortWarnTimerActive = false;
         }
         unsubscribe();
         clearActiveEmbeddedRun(params.sessionId, queueHandle);

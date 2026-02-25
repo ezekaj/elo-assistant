@@ -16,6 +16,12 @@ import type {
 } from "./types.js";
 import { resolveAgentDir, resolveAgentWorkspaceDir } from "../agents/agent-scope.js";
 import { resolveMemorySearchConfig } from "../agents/memory-search.js";
+import {
+  scheduleTimeout,
+  cancelTimeout,
+  scheduleInterval,
+  cancelInterval,
+} from "../agents/timer-wheel.js";
 import { resolveSessionTranscriptsDirForAgent } from "../config/sessions/paths.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { onSessionTranscriptUpdate } from "../sessions/transcript-events.js";
@@ -112,8 +118,8 @@ export class MemoryIndexManager implements MemorySearchManager {
   private readonly workspaceDir: string;
   private readonly settings: ResolvedMemorySearchConfig;
   private provider: EmbeddingProvider;
-  private readonly requestedProvider: "openai" | "local" | "gemini" | "auto";
-  private fallbackFrom?: "openai" | "local" | "gemini";
+  private readonly requestedProvider: "openai" | "local" | "gemini" | "auto" | "openrouter";
+  private fallbackFrom?: "openai" | "local" | "gemini" | "openrouter";
   private fallbackReason?: string;
   private openAi?: OpenAiEmbeddingClient;
   private gemini?: GeminiEmbeddingClient;
@@ -146,10 +152,10 @@ export class MemoryIndexManager implements MemorySearchManager {
   };
   private vectorReady: Promise<boolean> | null = null;
   private watcher: FSWatcher | null = null;
-  private watchTimer: NodeJS.Timeout | null = null;
-  private sessionWatchTimer: NodeJS.Timeout | null = null;
+  private watchTimerActive = false;
+  private sessionWatchTimerActive = false;
   private sessionUnsubscribe: (() => void) | null = null;
-  private intervalTimer: NodeJS.Timeout | null = null;
+  private intervalTimerActive = false;
   private closed = false;
   private dirty = false;
   private sessionsDirty = false;
@@ -581,17 +587,17 @@ export class MemoryIndexManager implements MemorySearchManager {
       return;
     }
     this.closed = true;
-    if (this.watchTimer) {
-      clearTimeout(this.watchTimer);
-      this.watchTimer = null;
+    if (this.watchTimerActive) {
+      cancelTimeout(`memory-watch-${this.agentId}`);
+      this.watchTimerActive = false;
     }
-    if (this.sessionWatchTimer) {
-      clearTimeout(this.sessionWatchTimer);
-      this.sessionWatchTimer = null;
+    if (this.sessionWatchTimerActive) {
+      cancelTimeout(`memory-session-${this.agentId}`);
+      this.sessionWatchTimerActive = false;
     }
-    if (this.intervalTimer) {
-      clearInterval(this.intervalTimer);
-      this.intervalTimer = null;
+    if (this.intervalTimerActive) {
+      cancelInterval(`memory-interval-${this.agentId}`);
+      this.intervalTimerActive = false;
     }
     if (this.watcher) {
       await this.watcher.close();
@@ -858,15 +864,16 @@ export class MemoryIndexManager implements MemorySearchManager {
 
   private scheduleSessionDirty(sessionFile: string) {
     this.sessionPendingFiles.add(sessionFile);
-    if (this.sessionWatchTimer) {
+    if (this.sessionWatchTimerActive) {
       return;
     }
-    this.sessionWatchTimer = setTimeout(() => {
-      this.sessionWatchTimer = null;
+    this.sessionWatchTimerActive = true;
+    scheduleTimeout(`memory-session-${this.agentId}`, SESSION_DIRTY_DEBOUNCE_MS, () => {
+      this.sessionWatchTimerActive = false;
       void this.processSessionDeltaBatch().catch((err) => {
         log.warn(`memory session delta failed: ${String(err)}`);
       });
-    }, SESSION_DIRTY_DEBOUNCE_MS);
+    });
   }
 
   private async processSessionDeltaBatch(): Promise<void> {
@@ -1016,30 +1023,32 @@ export class MemoryIndexManager implements MemorySearchManager {
 
   private ensureIntervalSync() {
     const minutes = this.settings.sync.intervalMinutes;
-    if (!minutes || minutes <= 0 || this.intervalTimer) {
+    if (!minutes || minutes <= 0 || this.intervalTimerActive) {
       return;
     }
     const ms = minutes * 60 * 1000;
-    this.intervalTimer = setInterval(() => {
+    this.intervalTimerActive = true;
+    scheduleInterval(`memory-interval-${this.agentId}`, ms, () => {
       void this.sync({ reason: "interval" }).catch((err) => {
         log.warn(`memory sync failed (interval): ${String(err)}`);
       });
-    }, ms);
+    });
   }
 
   private scheduleWatchSync() {
     if (!this.sources.has("memory") || !this.settings.sync.watch) {
       return;
     }
-    if (this.watchTimer) {
-      clearTimeout(this.watchTimer);
+    if (this.watchTimerActive) {
+      cancelTimeout(`memory-watch-${this.agentId}`);
     }
-    this.watchTimer = setTimeout(() => {
-      this.watchTimer = null;
+    this.watchTimerActive = true;
+    scheduleTimeout(`memory-watch-${this.agentId}`, this.settings.sync.watchDebounceMs, () => {
+      this.watchTimerActive = false;
       void this.sync({ reason: "watch" }).catch((err) => {
         log.warn(`memory sync failed (watch): ${String(err)}`);
       });
-    }, this.settings.sync.watchDebounceMs);
+    });
   }
 
   private shouldSyncSessions(

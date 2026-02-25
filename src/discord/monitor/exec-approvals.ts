@@ -5,6 +5,7 @@ import type { DiscordExecApprovalConfig } from "../../config/types.discord.js";
 import type { EventFrame } from "../../gateway/protocol/index.js";
 import type { ExecApprovalDecision } from "../../infra/exec-approvals.js";
 import type { RuntimeEnv } from "../../runtime.js";
+import { scheduleTimeout, cancelTimeout } from "../../agents/timer-wheel.js";
 import { GatewayClient } from "../../gateway/client.js";
 import { logDebug, logError } from "../../logger.js";
 import { GATEWAY_CLIENT_MODES, GATEWAY_CLIENT_NAMES } from "../../utils/message-channel.js";
@@ -38,7 +39,7 @@ export type ExecApprovalResolved = {
 type PendingApproval = {
   discordMessageId: string;
   discordChannelId: string;
-  timeoutId: NodeJS.Timeout;
+  timerId: string;
 };
 
 function encodeCustomIdValue(value: string): string {
@@ -295,7 +296,7 @@ export class DiscordExecApprovalHandler {
 
     // Clear all pending timeouts
     for (const pending of this.pending.values()) {
-      clearTimeout(pending.timeoutId);
+      cancelTimeout(pending.timerId);
     }
     this.pending.clear();
     this.requestCache.clear();
@@ -397,14 +398,15 @@ export class DiscordExecApprovalHandler {
 
         // Set up timeout
         const timeoutMs = Math.max(0, request.expiresAtMs - Date.now());
-        const timeoutId = setTimeout(() => {
+        const timerId = `discord-exec-approval-${request.id}`;
+        scheduleTimeout(timerId, timeoutMs, () => {
           void this.handleApprovalTimeout(request.id);
-        }, timeoutMs);
+        });
 
         this.pending.set(request.id, {
           discordMessageId: message.id,
           discordChannelId: dmChannel.id,
-          timeoutId,
+          timerId,
         });
 
         logDebug(`discord exec approvals: sent approval ${request.id} to user ${userId}`);
@@ -420,7 +422,7 @@ export class DiscordExecApprovalHandler {
       return;
     }
 
-    clearTimeout(pending.timeoutId);
+    cancelTimeout(pending.timerId);
     this.pending.delete(resolved.id);
 
     const request = this.requestCache.get(resolved.id);

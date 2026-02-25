@@ -1,5 +1,6 @@
 import chokidar from "chokidar";
 import type { OpenClawConfig, ConfigFileSnapshot, GatewayReloadMode } from "../config/config.js";
+import { scheduleTimeout, cancelTimeout } from "../agents/timer-wheel.js";
 import { type ChannelId, listChannelPlugins } from "../channels/plugins/index.js";
 import { getActivePluginRegistry } from "../plugins/runtime.js";
 
@@ -267,7 +268,8 @@ export function startGatewayConfigReloader(opts: {
 }): GatewayConfigReloader {
   let currentConfig = opts.initialConfig;
   let settings = resolveGatewayReloadSettings(currentConfig);
-  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  const debounceTimerId = "gateway-config-reload-debounce";
+  let debounceActive = false;
   let pending = false;
   let running = false;
   let stopped = false;
@@ -277,13 +279,15 @@ export function startGatewayConfigReloader(opts: {
     if (stopped) {
       return;
     }
-    if (debounceTimer) {
-      clearTimeout(debounceTimer);
+    if (debounceActive) {
+      cancelTimeout(debounceTimerId);
     }
     const wait = settings.debounceMs;
-    debounceTimer = setTimeout(() => {
+    debounceActive = true;
+    scheduleTimeout(debounceTimerId, wait, () => {
+      debounceActive = false;
       void runReload();
-    }, wait);
+    });
   };
 
   const runReload = async () => {
@@ -295,9 +299,9 @@ export function startGatewayConfigReloader(opts: {
       return;
     }
     running = true;
-    if (debounceTimer) {
-      clearTimeout(debounceTimer);
-      debounceTimer = null;
+    if (debounceActive) {
+      cancelTimeout(debounceTimerId);
+      debounceActive = false;
     }
     try {
       const snapshot = await opts.readSnapshot();
@@ -377,10 +381,10 @@ export function startGatewayConfigReloader(opts: {
   return {
     stop: async () => {
       stopped = true;
-      if (debounceTimer) {
-        clearTimeout(debounceTimer);
+      if (debounceActive) {
+        cancelTimeout(debounceTimerId);
+        debounceActive = false;
       }
-      debounceTimer = null;
       watcherClosed = true;
       await watcher.close().catch(() => {});
     },

@@ -82,5 +82,21 @@ describe("isRecoverableTelegramNetworkError", () => {
 
       expect(isRecoverableTelegramNetworkError(httpError)).toBe(false);
     });
+
+    it("detects grammy HttpError network failure in send context", () => {
+      // Grammy wraps network failures with "Network request for '<method>' failed!" message.
+      // This is always a pre-delivery failure so retrying is safe even in send context.
+      const fetchError = new TypeError("fetch failed");
+      const httpError = new MockHttpError("Network request for 'sendMessage' failed!", fetchError);
+
+      expect(isRecoverableTelegramNetworkError(httpError, { context: "send" })).toBe(true);
+    });
+
+    it("does not treat non-network HttpError as recoverable in send context", () => {
+      const authError = new Error("Unauthorized");
+      const httpError = new MockHttpError("Bad Request: invalid token", authError);
+
+      expect(isRecoverableTelegramNetworkError(httpError, { context: "send" })).toBe(false);
+    });
   });
 });

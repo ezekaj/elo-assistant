@@ -1,3 +1,4 @@
+import os from "node:os";
 import path from "node:path";
 import type { CanvasHostServer } from "../canvas-host/server.js";
 import type { PluginServicesHandle } from "../plugins/services.js";
@@ -18,6 +19,7 @@ import {
   readConfigFileSnapshot,
   writeConfigFile,
 } from "../config/config.js";
+import { resolveStateDir } from "../config/paths.js";
 import { applyPluginAutoEnable } from "../config/plugin-auto-enable.js";
 import { clearAgentRunContext, onAgentEvent } from "../infra/agent-events.js";
 import {
@@ -30,6 +32,7 @@ import { logAcceptedEnvOption } from "../infra/env.js";
 import { createExecApprovalForwarder } from "../infra/exec-approval-forwarder.js";
 import { onHeartbeatEvent } from "../infra/heartbeat-events.js";
 import { startHeartbeatRunner } from "../infra/heartbeat-runner.js";
+import { startHybridHeartbeat } from "../infra/heartbeat-v2/integration.js";
 import { getMachineDisplayName } from "../infra/machine-name.js";
 import { ensureOpenClawCliOnPath } from "../infra/path-env.js";
 import { setGatewaySigusr1RestartPolicy } from "../infra/restart.js";
@@ -353,7 +356,6 @@ export async function startGatewayServer(
   });
   let bonjourStop: (() => Promise<void>) | null = null;
   const nodeRegistry = new NodeRegistry();
-  const nodePresenceTimers = new Map<string, ReturnType<typeof setInterval>>();
   const nodeSubscriptions = createNodeSubscriptionManager();
   const nodeSendEvent = (opts: { nodeId: string; event: string; payloadJSON?: string | null }) => {
     const payload = safeParseJson(opts.payloadJSON ?? null);
@@ -403,7 +405,9 @@ export async function startGatewayServer(
   bonjourStop = discovery.bonjourStop;
 
   setSkillsRemoteRegistry(nodeRegistry);
-  void primeRemoteSkillsCache();
+  void primeRemoteSkillsCache().catch((err) =>
+    log.warn(`failed to prime remote skills cache: ${String(err)}`),
+  );
   // Debounce skills-triggered node probes to avoid feedback loops and rapid-fire invokes.
   // Skills changes can happen in bursts (e.g., file watcher events), and each probe
   // takes time to complete. A 30-second delay ensures we batch changes together.
@@ -419,11 +423,13 @@ export async function startGatewayServer(
     skillsRefreshTimer = setTimeout(() => {
       skillsRefreshTimer = null;
       const latest = loadConfig();
-      void refreshRemoteBinsForConnectedNodes(latest);
+      void refreshRemoteBinsForConnectedNodes(latest).catch((err) =>
+        log.warn(`failed to refresh remote bins for connected nodes: ${String(err)}`),
+      );
     }, skillsRefreshDelayMs);
   });
 
-  const { tickInterval, healthInterval, dedupeCleanup } = startGatewayMaintenanceTimers({
+  const { stopTick, stopHealth, stopDedupeCleanup } = startGatewayMaintenanceTimers({
     broadcast,
     nodeSendToAllSubscribed,
     getPresenceVersion,
@@ -457,7 +463,25 @@ export async function startGatewayServer(
     broadcast("heartbeat", evt, { dropIfSlow: true });
   });
 
-  let heartbeatRunner = startHeartbeatRunner({ cfg: cfgAtStart });
+  // Use Heartbeat V2 with SQLite persistence and timing wheel
+  let heartbeatRunner: Awaited<ReturnType<typeof startHybridHeartbeat>> | null = null;
+  let legacyHeartbeatRunner: ReturnType<typeof startHeartbeatRunner> | null = null;
+
+  // Try to start V2 system, fall back to legacy
+  const heartbeatStateDir = resolveStateDir(process.env, os.homedir);
+  startHybridHeartbeat(cfgAtStart, {
+    useV2: true,
+    fallbackToLegacy: true,
+    dbPath: path.join(heartbeatStateDir, "heartbeat-v2.db"),
+  })
+    .then((runner) => {
+      heartbeatRunner = runner;
+      log.info("Heartbeat V2 system started with SQLite persistence");
+    })
+    .catch((err) => {
+      log.warn(`Heartbeat V2 failed, using legacy: ${err}`);
+      legacyHeartbeatRunner = startHeartbeatRunner({ cfg: cfgAtStart });
+    });
 
   void cron.start().catch((err) => logCron.error(`failed to start: ${String(err)}`));
 
@@ -605,12 +629,11 @@ export async function startGatewayServer(
     stopChannel,
     pluginServices,
     cron,
-    heartbeatRunner,
-    nodePresenceTimers,
+    heartbeatRunner: heartbeatRunner ?? legacyHeartbeatRunner,
     broadcast,
-    tickInterval,
-    healthInterval,
-    dedupeCleanup,
+    stopTick,
+    stopHealth,
+    stopDedupeCleanup,
     agentUnsub,
     heartbeatUnsub,
     chatRunState,

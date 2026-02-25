@@ -1,6 +1,7 @@
 import type { HeartbeatRunResult } from "../../infra/heartbeat-wake.js";
 import type { CronJob } from "../types.js";
 import type { CronEvent, CronServiceState } from "./state.js";
+import { scheduleTimeout, cancelTimeout } from "../../agents/timer-wheel.js";
 import { computeJobNextRunAtMs, nextWakeAtMs, resolveJobPayloadTextForMain } from "./jobs.js";
 import { locked } from "./locked.js";
 import { ensureLoaded, persist } from "./store.js";
@@ -8,10 +9,10 @@ import { ensureLoaded, persist } from "./store.js";
 const MAX_TIMEOUT_MS = 2 ** 31 - 1;
 
 export function armTimer(state: CronServiceState) {
-  if (state.timer) {
-    clearTimeout(state.timer);
+  if (state.timerActive) {
+    cancelTimeout("cron-service");
   }
-  state.timer = null;
+  state.timerActive = false;
   if (!state.deps.cronEnabled) {
     return;
   }
@@ -22,12 +23,12 @@ export function armTimer(state: CronServiceState) {
   const delay = Math.max(nextAt - state.deps.nowMs(), 0);
   // Avoid TimeoutOverflowWarning when a job is far in the future.
   const clampedDelay = Math.min(delay, MAX_TIMEOUT_MS);
-  state.timer = setTimeout(() => {
+  state.timerActive = true;
+  scheduleTimeout("cron-service", clampedDelay, () => {
     void onTimer(state).catch((err) => {
       state.deps.log.error({ err: String(err) }, "cron: timer tick failed");
     });
-  }, clampedDelay);
-  state.timer.unref?.();
+  });
 }
 
 export async function onTimer(state: CronServiceState) {
@@ -233,10 +234,10 @@ export function wake(
 }
 
 export function stopTimer(state: CronServiceState) {
-  if (state.timer) {
-    clearTimeout(state.timer);
+  if (state.timerActive) {
+    cancelTimeout("cron-service");
   }
-  state.timer = null;
+  state.timerActive = false;
 }
 
 export function emit(state: CronServiceState, evt: CronEvent) {

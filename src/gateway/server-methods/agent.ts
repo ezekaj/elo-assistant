@@ -64,6 +64,7 @@ export const agentHandlers: GatewayRequestHandlers = {
       sessionId?: string;
       sessionKey?: string;
       thinking?: string;
+      effort?: string; // NEW: Effort level
       deliver?: boolean;
       attachments?: Array<{
         type?: string;
@@ -369,6 +370,7 @@ export const agentHandlers: GatewayRequestHandlers = {
         sessionId: resolvedSessionId,
         sessionKey: requestedSessionKey,
         thinking: request.thinking,
+        effort: request.effort, // NEW: Effort level
         deliver,
         deliveryTargetMode,
         channel: resolvedChannel,

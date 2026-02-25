@@ -3,6 +3,9 @@ import fs from "node:fs/promises";
 import { detectMime } from "../../media/mime.js";
 import { sanitizeToolResultImages } from "../tool-images.js";
 
+// Re-export AgentToolResult for use in other modules
+export type { AgentToolResult };
+
 // oxlint-disable-next-line typescript/no-explicit-any
 export type AnyAgentTool = AgentTool<any, unknown>;
 
@@ -113,6 +116,19 @@ export function readNumberParam(
   return integer ? Math.trunc(value) : value;
 }
 
+export function readBooleanParam(
+  params: Record<string, unknown>,
+  key: string,
+): boolean | undefined {
+  if (!(key in params)) return undefined;
+  const val = params[key];
+  if (typeof val === "boolean") return val;
+  if (typeof val === "string") {
+    return val.toLowerCase() === "true" || val === "1";
+  }
+  return undefined;
+}
+
 export function readStringArrayParam(
   params: Record<string, unknown>,
   key: string,
@@ -186,7 +202,12 @@ export function readReactionParams(
   return { emoji, remove, isEmpty: !emoji };
 }
 
-export function jsonResult(payload: unknown): AgentToolResult<unknown> {
+export function jsonResult<T extends Record<string, unknown>>(
+  payload: T,
+  options?: { includeStructuredContent?: boolean },
+): AgentToolResult<T> {
+  const includeStructuredContent = options?.includeStructuredContent ?? true;
+
   return {
     content: [
       {
@@ -195,6 +216,7 @@ export function jsonResult(payload: unknown): AgentToolResult<unknown> {
       },
     ],
     details: payload,
+    ...(includeStructuredContent && { structuredContent: payload }),
   };
 }
 

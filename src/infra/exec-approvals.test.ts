@@ -5,8 +5,10 @@ import { describe, expect, it, vi } from "vitest";
 import {
   analyzeArgvCommand,
   analyzeShellCommand,
+  checkImmediateDeny,
   evaluateExecAllowlist,
   evaluateShellAllowlist,
+  getImmediateDenyPatterns,
   isSafeBinUsage,
   matchAllowlist,
   maxAsk,
@@ -135,19 +137,22 @@ describe("exec approvals shell parsing", () => {
   it("rejects command substitution inside double quotes", () => {
     const res = analyzeShellCommand({ command: 'echo "output: $(whoami)"' });
     expect(res.ok).toBe(false);
-    expect(res.reason).toBe("unsupported shell token: $()");
+    // May be caught by immediate deny or parser - both are valid
+    expect(res.reason).toMatch(/command substitution|\$\(\)/);
   });
 
   it("rejects backticks inside double quotes", () => {
     const res = analyzeShellCommand({ command: 'echo "output: `id`"' });
     expect(res.ok).toBe(false);
-    expect(res.reason).toBe("unsupported shell token: `");
+    // May be caught by immediate deny or parser - both are valid
+    expect(res.reason).toMatch(/backtick|`/);
   });
 
   it("rejects command substitution outside quotes", () => {
     const res = analyzeShellCommand({ command: "echo $(whoami)" });
     expect(res.ok).toBe(false);
-    expect(res.reason).toBe("unsupported shell token: $()");
+    // May be caught by immediate deny or parser - both are valid
+    expect(res.reason).toMatch(/command substitution|\$\(\)/);
   });
 
   it("allows escaped command substitution inside double quotes", () => {
@@ -583,4 +588,180 @@ describe("exec approvals default agent migration", () => {
     expect(resolved.allowlist.map((entry) => entry.pattern)).toEqual(["/bin/main", "/bin/legacy"]);
     expect(resolved.file.agents?.default).toBeUndefined();
   });
+});
+
+describe("immediate deny patterns", () => {
+  describe("checkImmediateDeny", () => {
+    it("blocks command substitution $()", () => {
+      const result = checkImmediateDeny("echo $(whoami)");
+      expect(result.denied).toBe(true);
+      expect(result.reason).toContain("command substitution");
+    });
+
+    it("blocks backtick substitution", () => {
+      const result = checkImmediateDeny("echo `whoami`");
+      expect(result.denied).toBe(true);
+      expect(result.reason).toContain("backtick");
+    });
+
+    it("blocks variable expansion ${}", () => {
+      const result = checkImmediateDeny("echo ${PATH}");
+      expect(result.denied).toBe(true);
+      expect(result.reason).toContain("variable expansion");
+    });
+
+    it("blocks IFS manipulation", () => {
+      const result = checkImmediateDeny("IFS=: read a b");
+      expect(result.denied).toBe(true);
+      expect(result.reason).toContain("IFS");
+    });
+
+    it("blocks nested shell -c", () => {
+      const result = checkImmediateDeny('sh -c "rm -rf /"');
+      expect(result.denied).toBe(true);
+      expect(result.reason).toContain("nested shell");
+    });
+
+    it("blocks bash -c", () => {
+      const result = checkImmediateDeny('bash -c "malicious"');
+      expect(result.denied).toBe(true);
+      expect(result.reason).toContain("nested shell");
+    });
+
+    it("blocks python -c", () => {
+      const result = checkImmediateDeny('python -c "import os"');
+      expect(result.denied).toBe(true);
+      expect(result.reason).toContain("python -c");
+    });
+
+    it("blocks ruby -e", () => {
+      const result = checkImmediateDeny("ruby -e \"system('ls')\"");
+      expect(result.denied).toBe(true);
+      expect(result.reason).toContain("ruby -e");
+    });
+
+    it("blocks perl -e", () => {
+      const result = checkImmediateDeny('perl -e "print 1"');
+      expect(result.denied).toBe(true);
+      expect(result.reason).toContain("perl -e");
+    });
+
+    it("blocks node -e", () => {
+      const result = checkImmediateDeny('node -e "process.exit(1)"');
+      expect(result.denied).toBe(true);
+      expect(result.reason).toContain("node -e");
+    });
+
+    it("blocks awk system() calls", () => {
+      const result = checkImmediateDeny("awk '{system(\"rm -rf /\")}' /dev/null");
+      expect(result.denied).toBe(true);
+      expect(result.reason).toContain("awk system");
+    });
+
+    it("blocks process substitution <()", () => {
+      const result = checkImmediateDeny("diff <(ls) <(ls -a)");
+      expect(result.denied).toBe(true);
+      expect(result.reason).toContain("process substitution");
+    });
+
+    it("blocks eval command", () => {
+      const result = checkImmediateDeny('eval "rm -rf /"');
+      expect(result.denied).toBe(true);
+      expect(result.reason).toContain("eval");
+    });
+
+    it("blocks source command", () => {
+      const result = checkImmediateDeny("source ~/.bashrc");
+      expect(result.denied).toBe(true);
+      expect(result.reason).toContain("source");
+    });
+
+    it("blocks dot source command", () => {
+      const result = checkImmediateDeny(". ~/.bashrc");
+      expect(result.denied).toBe(true);
+      expect(result.reason).toContain("dot source");
+    });
+
+    it("blocks function definitions", () => {
+      const result = checkImmediateDeny("f() { rm -rf /; }");
+      expect(result.denied).toBe(true);
+      expect(result.reason).toContain("function");
+    });
+
+    it("allows safe commands", () => {
+      const safeCommands = [
+        "ls -la",
+        "git status",
+        "npm install",
+        "cat /etc/passwd",
+        "grep pattern file.txt",
+        "echo hello world",
+        "pwd",
+        "whoami",
+        "date",
+        "curl https://example.com",
+      ];
+
+      for (const cmd of safeCommands) {
+        const result = checkImmediateDeny(cmd);
+        expect(result.denied).toBe(false);
+      }
+    });
+  });
+
+  describe("analyzeShellCommand with immediate deny", () => {
+    it("rejects commands with blocked patterns", () => {
+      const result = analyzeShellCommand({ command: "echo $(whoami)" });
+      expect(result.ok).toBe(false);
+      expect(result.reason).toContain("blocked pattern");
+    });
+
+    it("can skip immediate deny check", () => {
+      const result = analyzeShellCommand({
+        command: "echo $(whoami)",
+        skipImmediateDeny: true,
+      });
+      // Should pass parsing (the $() will be caught by other parser logic)
+      // but won't be blocked by immediate deny
+      expect(result.reason).not.toContain("blocked pattern");
+    });
+  });
+
+  describe("getImmediateDenyPatterns", () => {
+    it("returns array of patterns with reasons", () => {
+      const patterns = getImmediateDenyPatterns();
+      expect(Array.isArray(patterns)).toBe(true);
+      expect(patterns.length).toBeGreaterThan(10);
+      for (const p of patterns) {
+        expect(p.pattern).toBeDefined();
+        expect(p.reason).toBeDefined();
+      }
+    });
+  });
+});
+
+describe("evasion attempt prevention", () => {
+  const EVASION_ATTEMPTS = [
+    { cmd: "$(rm -rf /)", reason: "command substitution" },
+    { cmd: "`rm -rf /`", reason: "backtick substitution" },
+    { cmd: 'sh -c "rm -rf /"', reason: "nested shell" },
+    { cmd: 'bash -c "rm -rf /"', reason: "nested shell" },
+    { cmd: "python -c \"import os; os.system('rm -rf /')\"", reason: "python inline" },
+    { cmd: "ruby -e \"system('rm -rf /')\"", reason: "ruby inline" },
+    { cmd: "perl -e \"system('rm -rf /')\"", reason: "perl inline" },
+    { cmd: "eval 'rm -rf /'", reason: "eval" },
+    { cmd: "source /tmp/malicious.sh", reason: "source" },
+    { cmd: ". /tmp/malicious.sh", reason: "dot source" },
+    { cmd: "awk '{system(\"rm\")}' /dev/null", reason: "awk system" },
+  ];
+
+  for (const { cmd, reason } of EVASION_ATTEMPTS) {
+    it(`blocks evasion attempt: ${reason}`, () => {
+      const denyResult = checkImmediateDeny(cmd);
+      expect(denyResult.denied).toBe(true);
+
+      const analyzeResult = analyzeShellCommand({ command: cmd });
+      expect(analyzeResult.ok).toBe(false);
+    });
+  }
 });

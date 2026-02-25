@@ -1,8 +1,10 @@
 import { Type } from "@sinclair/typebox";
 import type { OpenClawConfig } from "../../config/config.js";
 import type { AnyAgentTool } from "./common.js";
+import { withCircuitBreaker } from "../../infra/circuit-breaker.js";
 import { fetchWithSsrFGuard } from "../../infra/net/fetch-guard.js";
 import { SsrFBlockedError } from "../../infra/net/ssrf.js";
+import { retryAsync } from "../../infra/retry.js";
 import { wrapExternalContent, wrapWebContent } from "../../security/external-content.js";
 import { stringEnum } from "../schema/typebox.js";
 import { jsonResult, readNumberParam, readStringParam } from "./common.js";
@@ -25,6 +27,157 @@ import {
   withTimeout,
   writeCache,
 } from "./web-shared.js";
+
+// ============================================================================
+// MCP WEBFETCH PROTOCOL CONSTANTS
+// ============================================================================
+
+export const MCP_WEBFETCH_PROTOCOL_VERSION = "2024-11-05";
+export const MCP_WEBFETCH_METHODS = {
+  WEBFETCH_FETCH: "webfetch/fetch",
+  NOTIFICATIONS_WEBFETCH_STATUS: "notifications/webfetch/status",
+} as const;
+
+// ============================================================================
+// DOMAIN PERMISSIONS
+// ============================================================================
+
+export interface WebFetchDomainPermissions {
+  allowedDomains: string[];
+  deniedDomains: string[];
+  skipBlocklistCheck?: boolean;
+}
+
+export function isDomainAllowed(
+  url: string,
+  permissions?: WebFetchDomainPermissions,
+): { allowed: boolean; reason?: string } {
+  if (!permissions) {
+    return { allowed: true };
+  }
+
+  let hostname: string;
+  try {
+    hostname = new URL(url).hostname.toLowerCase();
+  } catch {
+    return { allowed: false, reason: "Invalid URL" };
+  }
+
+  // Check denied domains first
+  for (const denied of permissions.deniedDomains) {
+    if (hostname === denied || hostname.endsWith("." + denied)) {
+      return { allowed: false, reason: `Domain ${hostname} is denied` };
+    }
+  }
+
+  // Check allowed domains
+  if (permissions.allowedDomains.length > 0) {
+    for (const allowed of permissions.allowedDomains) {
+      if (hostname === allowed || hostname.endsWith("." + allowed)) {
+        return { allowed: true };
+      }
+    }
+    return { allowed: false, reason: `Domain ${hostname} is not in allowed list` };
+  }
+
+  return { allowed: true };
+}
+
+export function checkDomainBlocklist(
+  url: string,
+  blocklist?: string[],
+): { blocked: boolean; reason?: string } {
+  if (!blocklist || blocklist.length === 0) {
+    return { blocked: false };
+  }
+
+  let hostname: string;
+  try {
+    hostname = new URL(url).hostname.toLowerCase();
+  } catch {
+    return { blocked: true, reason: "Invalid URL" };
+  }
+
+  for (const blocked of blocklist) {
+    if (hostname === blocked || hostname.endsWith("." + blocked)) {
+      return { blocked: true, reason: `Domain ${hostname} is on the blocklist` };
+    }
+  }
+
+  return { blocked: false };
+}
+
+// ============================================================================
+// MCP WEBFETCH PROTOCOL HANDLER
+// ============================================================================
+
+export class McpWebFetchProtocol {
+  constructor(
+    private fetchUrl: (params: {
+      url: string;
+      extractMode: ExtractMode;
+      maxChars: number;
+      maxRedirects: number;
+      timeoutSeconds: number;
+      cacheTtlMs: number;
+      userAgent: string;
+      readabilityEnabled: boolean;
+      firecrawlEnabled: boolean;
+      firecrawlApiKey?: string;
+      firecrawlBaseUrl: string;
+      firecrawlOnlyMainContent: boolean;
+      firecrawlMaxAgeMs: number;
+      firecrawlProxy: "auto" | "basic" | "stealth";
+      firecrawlStoreInCache: boolean;
+      firecrawlTimeoutSeconds: number;
+    }) => Promise<Record<string, unknown>>,
+  ) {}
+
+  async handleFetch(
+    params: {
+      url: string;
+      extractMode?: ExtractMode;
+      maxChars?: number;
+      maxRedirects?: number;
+      timeoutSeconds?: number;
+    },
+    permissions?: WebFetchDomainPermissions,
+  ): Promise<Record<string, unknown>> {
+    // Check domain permissions
+    if (permissions) {
+      const domainCheck = isDomainAllowed(params.url, permissions);
+      if (!domainCheck.allowed) {
+        throw new Error(domainCheck.reason);
+      }
+    }
+
+    // Execute fetch
+    return this.fetchUrl({
+      url: params.url,
+      extractMode: params.extractMode ?? "markdown",
+      maxChars: params.maxChars ?? DEFAULT_FETCH_MAX_CHARS,
+      maxRedirects: params.maxRedirects ?? DEFAULT_FETCH_MAX_REDIRECTS,
+      timeoutSeconds: params.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS,
+      cacheTtlMs: DEFAULT_CACHE_TTL_MINUTES * 60 * 1000,
+      userAgent: DEFAULT_FETCH_USER_AGENT,
+      readabilityEnabled: true,
+      firecrawlEnabled: false,
+      firecrawlBaseUrl: DEFAULT_FIRECRAWL_BASE_URL,
+      firecrawlOnlyMainContent: true,
+      firecrawlMaxAgeMs: DEFAULT_FIRECRAWL_MAX_AGE_MS,
+      firecrawlProxy: "auto",
+      firecrawlStoreInCache: true,
+      firecrawlTimeoutSeconds: DEFAULT_TIMEOUT_SECONDS,
+    });
+  }
+
+  registerNotifications(
+    onStatusChange: (url: string, status: "started" | "completed" | "failed") => void,
+  ): void {
+    // Placeholder for notification registration
+    // In a real implementation, this would integrate with the agent's event system
+  }
+}
 
 export { extractReadableContent } from "./web-fetch-utils.js";
 
@@ -54,6 +207,28 @@ const WebFetchSchema = Type.Object({
       minimum: 100,
     }),
   ),
+});
+
+// ============================================================================
+// WEBFETCH OUTPUT SCHEMA
+// ============================================================================
+
+const WebFetchOutputSchema = Type.Object({
+  url: Type.String(),
+  finalUrl: Type.String(),
+  status: Type.Number(),
+  contentType: Type.String(),
+  title: Type.Optional(Type.String()),
+  extractMode: Type.String(),
+  extractor: Type.String(),
+  truncated: Type.Boolean(),
+  length: Type.Number(),
+  rawLength: Type.Number(),
+  wrappedLength: Type.Number(),
+  fetchedAt: Type.String(),
+  tookMs: Type.Number(),
+  text: Type.String(),
+  warning: Type.Optional(Type.String()),
 });
 
 type WebFetchConfig = NonNullable<OpenClawConfig["tools"]>["web"] extends infer Web
@@ -312,30 +487,66 @@ export async function fetchFirecrawlContent(params: {
     storeInCache: params.storeInCache,
   };
 
-  const res = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${params.apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-    signal: withTimeout(undefined, params.timeoutSeconds * 1000),
-  });
+  // Circuit breaker + retry for Firecrawl (fast-fail if service is down)
+  const { res, payload } = await withCircuitBreaker(
+    "firecrawl",
+    () =>
+      retryAsync(
+        async () => {
+          const response = await fetch(endpoint, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${params.apiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(body),
+            signal: withTimeout(undefined, params.timeoutSeconds * 1000),
+          });
 
-  const payload = (await res.json()) as {
-    success?: boolean;
-    data?: {
-      markdown?: string;
-      content?: string;
-      metadata?: {
-        title?: string;
-        sourceURL?: string;
-        statusCode?: number;
-      };
-    };
-    warning?: string;
-    error?: string;
-  };
+          const json = (await response.json()) as {
+            success?: boolean;
+            data?: {
+              markdown?: string;
+              content?: string;
+              metadata?: {
+                title?: string;
+                sourceURL?: string;
+                statusCode?: number;
+              };
+            };
+            warning?: string;
+            error?: string;
+          };
+
+          // Throw on server errors (5xx) to trigger retry
+          if (response.status >= 500) {
+            throw new Error(`Firecrawl server error (${response.status})`);
+          }
+
+          return { res: response, payload: json };
+        },
+        {
+          attempts: 3,
+          minDelayMs: 500,
+          maxDelayMs: 5000,
+          jitter: 0.2,
+          label: "firecrawl-fetch",
+          shouldRetry: (err) => {
+            const msg = String(err);
+            // Network errors
+            if (/ECONNRESET|ETIMEDOUT|ENOTFOUND|EPIPE|EAI_AGAIN|socket hang up/i.test(msg)) {
+              return true;
+            }
+            // Firecrawl 5xx errors only
+            if (/Firecrawl server error \(5\d{2}\)/.test(msg)) {
+              return true;
+            }
+            return false;
+          },
+        },
+      ),
+    { failureThreshold: 5, resetTimeoutMs: 30_000 },
+  );
 
   if (!res.ok || payload?.success === false) {
     const detail = payload?.error ?? "";
@@ -654,6 +865,7 @@ export function createWebFetchTool(options?: {
     description:
       "Fetch and extract readable content from a URL (HTML → markdown/text). Use for lightweight page access without browser automation.",
     parameters: WebFetchSchema,
+    outputSchema: WebFetchOutputSchema,
     execute: async (_toolCallId, args) => {
       const params = args as Record<string, unknown>;
       const url = readStringParam(params, "url", { required: true });
@@ -686,3 +898,16 @@ export function createWebFetchTool(options?: {
     },
   };
 }
+
+// ============================================================================
+// EXPORTS FOR MCP PROTOCOL
+// ============================================================================
+
+export {
+  MCP_WEBFETCH_PROTOCOL_VERSION,
+  MCP_WEBFETCH_METHODS,
+  McpWebFetchProtocol,
+  type WebFetchDomainPermissions,
+  isDomainAllowed,
+  checkDomainBlocklist,
+};

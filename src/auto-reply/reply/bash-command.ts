@@ -4,8 +4,8 @@ import type { ReplyPayload } from "../types.js";
 import { resolveSessionAgentId } from "../../agents/agent-scope.js";
 import { getFinishedSession, getSession, markExited } from "../../agents/bash-process-registry.js";
 import { createExecTool } from "../../agents/bash-tools.js";
+import { forceKillTree } from "../../agents/kill-tree.js";
 import { resolveSandboxRuntimeStatus } from "../../agents/sandbox.js";
-import { killProcessTree } from "../../agents/shell-utils.js";
 import { formatCliCommand } from "../../cli/command-format.js";
 import { logVerbose } from "../../globals.js";
 import { clampInt } from "../../utils.js";
@@ -324,7 +324,7 @@ export async function handleBashChatCommand(params: {
     }
     const pid = running.pid ?? running.child?.pid;
     if (pid) {
-      killProcessTree(pid);
+      void forceKillTree(pid);
     }
     markExited(running, null, "SIGKILL", "failed");
     if (activeJob?.state === "running" && activeJob.sessionId === sessionId) {

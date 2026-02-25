@@ -11,6 +11,13 @@ type RunStreamState = {
   displayText: string;
 };
 
+/**
+ * TuiStreamAssembler - Manages streaming text assembly.
+ *
+ * Note: The stream sends full accumulated text on each delta, not partial deltas.
+ * We use simple string storage since we're replacing, not appending.
+ * The Piece Table optimization is more useful for incremental editing scenarios.
+ */
 export class TuiStreamAssembler {
   private runs = new Map<string, RunStreamState>();
 
@@ -47,6 +54,10 @@ export class TuiStreamAssembler {
     state.displayText = displayText;
   }
 
+  /**
+   * Ingest a streaming delta and return the updated display text.
+   * Returns null if there's no change to display.
+   */
   ingestDelta(runId: string, message: unknown, showThinking: boolean): string | null {
     const state = this.getOrCreateRun(runId);
     const previousDisplayText = state.displayText;
@@ -59,10 +70,14 @@ export class TuiStreamAssembler {
     return state.displayText;
   }
 
+  /**
+   * Finalize a stream and return the complete text.
+   */
   finalize(runId: string, message: unknown, showThinking: boolean): string {
     const state = this.getOrCreateRun(runId);
     this.updateRunState(state, message, showThinking);
     const finalComposed = state.displayText;
+
     const finalText = resolveFinalAssistantText({
       finalText: finalComposed,
       streamedText: state.displayText,
@@ -72,7 +87,19 @@ export class TuiStreamAssembler {
     return finalText;
   }
 
+  /**
+   * Drop a run without finalizing (e.g., on abort).
+   */
   drop(runId: string) {
     this.runs.delete(runId);
+  }
+
+  /**
+   * Get stats for debugging/monitoring.
+   */
+  getStats(): { activeRuns: number } {
+    return {
+      activeRuns: this.runs.size,
+    };
   }
 }

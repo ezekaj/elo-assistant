@@ -12,6 +12,7 @@ import type {
   MemorySyncProgressUpdate,
 } from "./types.js";
 import { resolveAgentWorkspaceDir } from "../agents/agent-scope.js";
+import { scheduleInterval, cancelInterval } from "../agents/timer-wheel.js";
 import { resolveStateDir } from "../config/paths.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { parseAgentSessionKey } from "../sessions/session-key-utils.js";
@@ -81,7 +82,7 @@ export class QmdMemoryManager implements MemorySearchManager {
     { rel: string; abs: string; source: MemorySource }
   >();
   private readonly sessionExporter: SessionExporterConfig | null;
-  private updateTimer: NodeJS.Timeout | null = null;
+  private updateTimerActive = false;
   private pendingUpdate: Promise<void> | null = null;
   private closed = false;
   private db: SqliteDatabase | null = null;
@@ -148,11 +149,12 @@ export class QmdMemoryManager implements MemorySearchManager {
       await this.runUpdate("boot", true);
     }
     if (this.qmd.update.intervalMs > 0) {
-      this.updateTimer = setInterval(() => {
+      this.updateTimerActive = true;
+      scheduleInterval(`qmd-update-${this.agentId}`, this.qmd.update.intervalMs, () => {
         void this.runUpdate("interval").catch((err) => {
           log.warn(`qmd update failed (${String(err)})`);
         });
-      }, this.qmd.update.intervalMs);
+      });
     }
   }
 
@@ -364,9 +366,9 @@ export class QmdMemoryManager implements MemorySearchManager {
       return;
     }
     this.closed = true;
-    if (this.updateTimer) {
-      clearInterval(this.updateTimer);
-      this.updateTimer = null;
+    if (this.updateTimerActive) {
+      cancelInterval(`qmd-update-${this.agentId}`);
+      this.updateTimerActive = false;
     }
     await this.pendingUpdate?.catch(() => undefined);
     if (this.db) {

@@ -234,7 +234,7 @@ export type MemorySearchConfig = {
     sessionMemory?: boolean;
   };
   /** Embedding provider mode. */
-  provider?: "openai" | "gemini" | "local";
+  provider?: "openai" | "gemini" | "local" | "openrouter";
   remote?: {
     baseUrl?: string;
     apiKey?: string;
@@ -448,5 +448,14 @@ export type ToolsConfig = {
       allow?: string[];
       deny?: string[];
     };
+  };
+  /** Grep tool configuration. */
+  grep?: {
+    /** Paths to exclude from grep searches (glob patterns). */
+    excludePaths?: string[];
+    /** Default max buffer size in bytes (default: 52428800 = 50MB). */
+    defaultMaxBuffer?: number;
+    /** Default timeout in seconds (default: 60). */
+    defaultTimeout?: number;
   };
 };

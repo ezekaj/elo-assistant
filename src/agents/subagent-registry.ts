@@ -8,6 +8,7 @@ import {
   saveSubagentRegistryToDisk,
 } from "./subagent-registry.store.js";
 import { resolveAgentTimeoutMs } from "./timeout.js";
+import { scheduleInterval, cancelInterval } from "./timer-wheel.js";
 
 export type SubagentRunRecord = {
   runId: string;
@@ -28,7 +29,8 @@ export type SubagentRunRecord = {
 };
 
 const subagentRuns = new Map<string, SubagentRunRecord>();
-let sweeper: NodeJS.Timeout | null = null;
+let sweeperActive = false;
+const SWEEPER_TIMER_ID = "subagent-registry-sweeper";
 let listenerStarted = false;
 let listenerStop: (() => void) | null = null;
 // Use var to avoid TDZ when init runs across circular imports during bootstrap.
@@ -139,21 +141,21 @@ function resolveSubagentWaitTimeoutMs(
 }
 
 function startSweeper() {
-  if (sweeper) {
+  if (sweeperActive) {
     return;
   }
-  sweeper = setInterval(() => {
+  sweeperActive = true;
+  scheduleInterval(SWEEPER_TIMER_ID, 60_000, () => {
     void sweepSubagentRuns();
-  }, 60_000);
-  sweeper.unref?.();
+  });
 }
 
 function stopSweeper() {
-  if (!sweeper) {
+  if (!sweeperActive) {
     return;
   }
-  clearInterval(sweeper);
-  sweeper = null;
+  cancelInterval(SWEEPER_TIMER_ID);
+  sweeperActive = false;
 }
 
 async function sweepSubagentRuns() {

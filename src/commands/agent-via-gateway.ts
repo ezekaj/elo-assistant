@@ -37,6 +37,7 @@ export type AgentCliOpts = {
   to?: string;
   sessionId?: string;
   thinking?: string;
+  effort?: string; // NEW: Effort level
   verbose?: string;
   json?: boolean;
   timeout?: string;
@@ -133,6 +134,7 @@ export async function agentViaGatewayCommand(opts: AgentCliOpts, runtime: Runtim
           sessionId: opts.sessionId,
           sessionKey,
           thinking: opts.thinking,
+          effort: opts.effort, // NEW: Effort level
           deliver: Boolean(opts.deliver),
           channel,
           replyChannel: opts.replyChannel,

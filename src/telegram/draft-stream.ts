@@ -1,4 +1,5 @@
 import type { Bot } from "grammy";
+import { scheduleTimeout, cancelTimeout } from "../agents/timer-wheel.js";
 import { buildTelegramThreadParams, type TelegramThreadSpec } from "./bot/helpers.js";
 
 const TELEGRAM_DRAFT_MAX_CHARS = 4096;
@@ -31,8 +32,9 @@ export function createTelegramDraftStream(params: {
   let lastSentAt = 0;
   let pendingText = "";
   let inFlight = false;
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  let timerActive = false;
   let stopped = false;
+  const timerId = `telegram-draft-${chatId}-${draftId}`;
 
   const sendDraft = async (text: string) => {
     if (stopped) {
@@ -65,9 +67,9 @@ export function createTelegramDraftStream(params: {
   };
 
   const flush = async () => {
-    if (timer) {
-      clearTimeout(timer);
-      timer = undefined;
+    if (timerActive) {
+      cancelTimeout(timerId);
+      timerActive = false;
     }
     if (inFlight) {
       schedule();
@@ -97,13 +99,15 @@ export function createTelegramDraftStream(params: {
   };
 
   const schedule = () => {
-    if (timer) {
+    if (timerActive) {
       return;
     }
     const delay = Math.max(0, throttleMs - (Date.now() - lastSentAt));
-    timer = setTimeout(() => {
+    timerActive = true;
+    scheduleTimeout(timerId, delay, () => {
+      timerActive = false;
       void flush();
-    }, delay);
+    });
   };
 
   const update = (text: string) => {
@@ -115,7 +119,7 @@ export function createTelegramDraftStream(params: {
       schedule();
       return;
     }
-    if (!timer && Date.now() - lastSentAt >= throttleMs) {
+    if (!timerActive && Date.now() - lastSentAt >= throttleMs) {
       void flush();
       return;
     }
@@ -125,9 +129,9 @@ export function createTelegramDraftStream(params: {
   const stop = () => {
     stopped = true;
     pendingText = "";
-    if (timer) {
-      clearTimeout(timer);
-      timer = undefined;
+    if (timerActive) {
+      cancelTimeout(timerId);
+      timerActive = false;
     }
   };
 

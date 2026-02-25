@@ -33,6 +33,7 @@ import {
 } from "./hooks.js";
 import { handleOpenAiHttpRequest } from "./openai-http.js";
 import { handleOpenResponsesHttpRequest } from "./openresponses-http.js";
+import { handleToolsInvokeStreaming } from "./server-streaming.js";
 import { handleToolsInvokeHttpRequest } from "./tools-invoke-http.js";
 
 type SubsystemLogger = ReturnType<typeof createSubsystemLogger>;
@@ -294,6 +295,13 @@ export function createGatewayHttpServer(opts: {
           return;
         }
       }
+
+      // Streaming tool invocation
+      if (url.pathname === "/api/tools/invoke-stream" && req.method === "POST") {
+        await handleToolsInvokeStreaming(req, res);
+        return;
+      }
+
       if (controlUiEnabled) {
         if (
           handleControlUiAvatarRequest(req, res, {

@@ -7,6 +7,12 @@ import {
   resolveSubagentToolPolicy,
 } from "../agents/pi-tools.policy.js";
 import {
+  executeToolWithValidation,
+  MissingStructuredContentError,
+  ToolOutputValidationError,
+} from "../agents/tool-execution-validator.js";
+import { executeToolWithHooks } from "../agents/tool-execution-wrapper.js";
+import {
   buildPluginToolGroups,
   collectExplicitAllowlist,
   expandPolicyWithPluginGroups,
@@ -313,10 +319,60 @@ export async function handleToolsInvokeHttpRequest(
       action,
       args,
     });
+
+    // Build context for hooks
+    const hookContext = {
+      session_id: sessionKey || "unknown",
+      tool_use_id: `invoke_${Date.now()}`,
+      cwd: process.cwd(),
+      transcript_path: "",
+      permission_mode: "ask",
+    };
+
+    // Execute tool with hooks integration
     // oxlint-disable-next-line typescript/no-explicit-any
-    const result = await (tool as any).execute?.(`http-${Date.now()}`, toolArgs);
-    sendJson(res, 200, { ok: true, result });
+    const hooksResult = await executeToolWithHooks(tool as any, toolArgs, hookContext);
+
+    if (hooksResult.blocked) {
+      sendJson(res, 403, {
+        ok: false,
+        error: {
+          type: "blocked_by_hook",
+          message: hooksResult.reason || "Tool execution blocked by hook",
+          systemMessage: hooksResult.systemMessage,
+        },
+      });
+      return true;
+    }
+
+    // Validate output schema if present
+    const result = hooksResult.result;
+    sendJson(res, 200, { ok: true, result, additionalContext: hooksResult.additionalContext });
   } catch (err) {
+    // Handle validation errors with appropriate status codes
+    if (err instanceof ToolOutputValidationError) {
+      sendJson(res, 500, {
+        ok: false,
+        error: {
+          type: "validation_error",
+          message: `Tool ${toolName} output validation failed: ${err.message}`,
+          toolName: err.toolName,
+        },
+      });
+      return true;
+    }
+    if (err instanceof MissingStructuredContentError) {
+      sendJson(res, 500, {
+        ok: false,
+        error: {
+          type: "missing_structured_content",
+          message: `Tool ${toolName} has output schema but did not return structured content`,
+          toolName: toolName,
+        },
+      });
+      return true;
+    }
+    // Handle other tool errors
     sendJson(res, 400, {
       ok: false,
       error: { type: "tool_error", message: err instanceof Error ? err.message : String(err) },

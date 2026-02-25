@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { OpenClawConfig } from "../config/config.js";
 import type { RuntimeEnv } from "../runtime.js";
 import type { LineChannelData, ResolvedLineAccount } from "./types.js";
+import { scheduleInterval, cancelInterval } from "../agents/timer-wheel.js";
 import { chunkMarkdownText } from "../auto-reply/chunk.js";
 import { dispatchReplyWithBufferedBlockDispatcher } from "../auto-reply/reply/provider-dispatcher.js";
 import { createReplyPrefixOptions } from "../channels/reply-prefix.js";
@@ -94,6 +95,8 @@ async function readRequestBody(req: IncomingMessage): Promise<string> {
   });
 }
 
+let lineKeepaliveIdCounter = 0;
+
 function startLineLoadingKeepalive(params: {
   userId: string;
   accountId?: string;
@@ -103,6 +106,7 @@ function startLineLoadingKeepalive(params: {
   const intervalMs = params.intervalMs ?? 18_000;
   const loadingSeconds = params.loadingSeconds ?? 20;
   let stopped = false;
+  const timerId = `line-loading-keepalive-${++lineKeepaliveIdCounter}`;
 
   const trigger = () => {
     if (stopped) {
@@ -115,14 +119,14 @@ function startLineLoadingKeepalive(params: {
   };
 
   trigger();
-  const timer = setInterval(trigger, intervalMs);
+  scheduleInterval(timerId, intervalMs, trigger);
 
   return () => {
     if (stopped) {
       return;
     }
     stopped = true;
-    clearInterval(timer);
+    cancelInterval(timerId);
   };
 }
 

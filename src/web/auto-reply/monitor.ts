@@ -1,4 +1,5 @@
 import type { WebChannelStatus, WebInboundMsg, WebMonitorTuning } from "./types.js";
+import { scheduleInterval, cancelInterval } from "../../agents/timer-wheel.js";
 import { hasControlCommand } from "../../auto-reply/command-detection.js";
 import { resolveInboundDebounceMs } from "../../auto-reply/inbound-debounce.js";
 import { getReplyFromConfig } from "../../auto-reply/reply.js";
@@ -147,8 +148,10 @@ export async function monitorWebChannel(
 
     const connectionId = newConnectionId();
     const startedAt = Date.now();
-    let heartbeat: NodeJS.Timeout | null = null;
-    let watchdogTimer: NodeJS.Timeout | null = null;
+    const heartbeatTimerId = `web-heartbeat-${connectionId}`;
+    const watchdogTimerId = `web-watchdog-${connectionId}`;
+    let heartbeatActive = false;
+    let watchdogActive = false;
     let lastMessageAt: number | null = null;
     let handledMessages = 0;
     let _lastInboundMsg: WebInboundMsg | null = null;
@@ -249,11 +252,13 @@ export async function monitorWebChannel(
         unregisterUnhandled();
         unregisterUnhandled = null;
       }
-      if (heartbeat) {
-        clearInterval(heartbeat);
+      if (heartbeatActive) {
+        cancelInterval(heartbeatTimerId);
+        heartbeatActive = false;
       }
-      if (watchdogTimer) {
-        clearInterval(watchdogTimer);
+      if (watchdogActive) {
+        cancelInterval(watchdogTimerId);
+        watchdogActive = false;
       }
       if (backgroundTasks.size > 0) {
         await Promise.allSettled(backgroundTasks);
@@ -267,7 +272,8 @@ export async function monitorWebChannel(
     };
 
     if (keepAlive) {
-      heartbeat = setInterval(() => {
+      heartbeatActive = true;
+      scheduleInterval(heartbeatTimerId, heartbeatSeconds * 1000, () => {
         const authAgeMs = getWebAuthAgeMs(account.authDir);
         const minutesSinceLastMessage = lastMessageAt
           ? Math.floor((Date.now() - lastMessageAt) / 60000)
@@ -290,9 +296,10 @@ export async function monitorWebChannel(
         } else {
           heartbeatLogger.info(logData, "web gateway heartbeat");
         }
-      }, heartbeatSeconds * 1000);
+      });
 
-      watchdogTimer = setInterval(() => {
+      watchdogActive = true;
+      scheduleInterval(watchdogTimerId, WATCHDOG_CHECK_MS, () => {
         if (!lastMessageAt) {
           return;
         }
@@ -321,7 +328,7 @@ export async function monitorWebChannel(
           isLoggedOut: false,
           error: "watchdog-timeout",
         });
-      }, WATCHDOG_CHECK_MS);
+      });
     }
 
     whatsappLog.info("Listening for personal WhatsApp inbound messages.");

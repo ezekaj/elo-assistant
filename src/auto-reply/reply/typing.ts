@@ -1,3 +1,9 @@
+import {
+  scheduleTimeout,
+  cancelTimeout,
+  scheduleInterval,
+  cancelInterval,
+} from "../../agents/timer-wheel.js";
 import { isSilentReplyText, SILENT_REPLY_TOKEN } from "../tokens.js";
 
 export type TypingController = {
@@ -10,6 +16,8 @@ export type TypingController = {
   markDispatchIdle: () => void;
   cleanup: () => void;
 };
+
+let typingControllerCounter = 0;
 
 export function createTypingController(params: {
   onReplyStart?: () => Promise<void> | void;
@@ -25,6 +33,9 @@ export function createTypingController(params: {
     silentToken = SILENT_REPLY_TOKEN,
     log,
   } = params;
+  const controllerId = ++typingControllerCounter;
+  const intervalTimerId = `typing-interval-${controllerId}`;
+  const ttlTimerId = `typing-ttl-${controllerId}`;
   let started = false;
   let active = false;
   let runComplete = false;
@@ -33,8 +44,8 @@ export function createTypingController(params: {
   // especially when upstream event emitters don't await async listeners.
   // Once we stop typing, we "seal" the controller so late events can't restart typing forever.
   let sealed = false;
-  let typingTimer: NodeJS.Timeout | undefined;
-  let typingTtlTimer: NodeJS.Timeout | undefined;
+  let typingTimerActive = false;
+  let typingTtlTimerActive = false;
   const typingIntervalMs = typingIntervalSeconds * 1000;
 
   const formatTypingTtl = (ms: number) => {
@@ -55,13 +66,13 @@ export function createTypingController(params: {
     if (sealed) {
       return;
     }
-    if (typingTtlTimer) {
-      clearTimeout(typingTtlTimer);
-      typingTtlTimer = undefined;
+    if (typingTtlTimerActive) {
+      cancelTimeout(ttlTimerId);
+      typingTtlTimerActive = false;
     }
-    if (typingTimer) {
-      clearInterval(typingTimer);
-      typingTimer = undefined;
+    if (typingTimerActive) {
+      cancelInterval(intervalTimerId);
+      typingTimerActive = false;
     }
     resetCycle();
     sealed = true;
@@ -77,16 +88,18 @@ export function createTypingController(params: {
     if (typingTtlMs <= 0) {
       return;
     }
-    if (typingTtlTimer) {
-      clearTimeout(typingTtlTimer);
+    if (typingTtlTimerActive) {
+      cancelTimeout(ttlTimerId);
     }
-    typingTtlTimer = setTimeout(() => {
-      if (!typingTimer) {
+    typingTtlTimerActive = true;
+    scheduleTimeout(ttlTimerId, typingTtlMs, () => {
+      typingTtlTimerActive = false;
+      if (!typingTimerActive) {
         return;
       }
       log?.(`typing TTL reached (${formatTypingTtl(typingTtlMs)}); stopping typing indicator`);
       cleanup();
-    }, typingTtlMs);
+    });
   };
 
   const isActive = () => active && !sealed;
@@ -142,13 +155,14 @@ export function createTypingController(params: {
     if (typingIntervalMs <= 0) {
       return;
     }
-    if (typingTimer) {
+    if (typingTimerActive) {
       return;
     }
     await ensureStart();
-    typingTimer = setInterval(() => {
+    typingTimerActive = true;
+    scheduleInterval(intervalTimerId, typingIntervalMs, () => {
       void triggerTyping();
-    }, typingIntervalMs);
+    });
   };
 
   const startTypingOnText = async (text?: string) => {

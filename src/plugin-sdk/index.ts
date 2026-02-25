@@ -220,7 +220,13 @@ export {
   readStringParam,
 } from "../agents/tools/common.js";
 export { formatDocsLink } from "../terminal/links.js";
-export type { HookEntry } from "../hooks/types.js";
+export type {
+  HookRegistration,
+  HookConfig,
+  HookMatcher,
+  HookEventName,
+  HookType,
+} from "../hooks/types.js";
 export { normalizeE164 } from "../utils.js";
 export { missingTargetError } from "../infra/outbound/target-errors.js";
 export { registerLogTransport } from "../logging/logger.js";

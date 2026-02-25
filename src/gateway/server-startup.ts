@@ -1,6 +1,10 @@
 import type { CliDeps } from "../cli/deps.js";
 import type { loadConfig } from "../config/config.js";
 import type { loadOpenClawPlugins } from "../plugins/loader.js";
+import { initAdaptiveResponse } from "../agents/adaptive-response-integration.js";
+import { initAnswerBriefingTracker } from "../agents/answer-briefing-tracker.js";
+import { initAutoCompactionContext, triggerAutoCompaction } from "../agents/auto-compaction.js";
+import { initCompactionBriefingListener } from "../agents/compaction-briefing-integration.js";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "../agents/defaults.js";
 import { loadModelCatalog } from "../agents/model-catalog.js";
 import {
@@ -8,6 +12,12 @@ import {
   resolveConfiguredModelRef,
   resolveHooksGmailModel,
 } from "../agents/model-selection.js";
+import {
+  getPredictiveEngine,
+  getEventMesh,
+  getAnalyticsStatus,
+} from "../agents/predictive-integration.js";
+import { initializeHooks } from "../hooks/executor.js";
 import { startGmailWatcher } from "../hooks/gmail-watcher.js";
 import {
   clearInternalHooks,
@@ -44,6 +54,74 @@ export async function startGatewaySidecars(params: {
     browserControl = await startBrowserControlServerIfEnabled();
   } catch (err) {
     params.logBrowser.error(`server failed to start: ${String(err)}`);
+  }
+
+  // Initialize compaction briefing listener to track compactions for daily briefings.
+  try {
+    initCompactionBriefingListener();
+  } catch (err) {
+    params.log.warn(`compaction briefing listener failed to start: ${String(err)}`);
+  }
+
+  // Initialize auto-compaction context (must be done before answer briefing tracker)
+  try {
+    initAutoCompactionContext({
+      config: params.cfg,
+      workspaceDir: params.defaultWorkspaceDir,
+    });
+  } catch (err) {
+    params.log.warn(`auto-compaction context failed to initialize: ${String(err)}`);
+  }
+
+  // Initialize answer briefing tracker (briefing after every answer + auto-compact after 13 answers)
+  try {
+    // Get briefing config from agents.defaults
+    const briefingConfig = params.cfg.agents?.defaults?.briefingConfig;
+
+    initAnswerBriefingTracker({
+      compactAfterAnswers: 13,
+      // Only provide llmConfig if apiKey is actually set
+      llmConfig: briefingConfig?.apiKey
+        ? {
+            apiKey: briefingConfig.apiKey,
+            model: briefingConfig.model,
+            baseUrl: briefingConfig.baseUrl,
+          }
+        : undefined,
+      onCompactNeeded: async (sessionKey, agentId) => {
+        await triggerAutoCompaction(sessionKey, agentId);
+      },
+    });
+  } catch (err) {
+    params.log.warn(`answer briefing tracker failed to start: ${String(err)}`);
+  }
+
+  // Initialize adaptive response system (smart urgency + pattern learning)
+  try {
+    initAdaptiveResponse({
+      groupUrgencyThreshold: 40,
+      dmUrgencyThreshold: 20,
+      learningEnabled: true,
+      quietHours: { start: 23, end: 8 },
+    });
+  } catch (err) {
+    params.log.warn(`adaptive response failed to start: ${String(err)}`);
+  }
+
+  // Initialize predictive integration (event mesh + neuro-memory + tool analytics)
+  // The import triggers auto-initialization via ensureInitialized()
+  try {
+    const engine = getPredictiveEngine();
+    const mesh = getEventMesh();
+    const status = getAnalyticsStatus();
+    if (engine && mesh) {
+      const neuroStatus = mesh.isNeuroMemoryEnabled() ? "connected" : "disabled";
+      params.log.warn(
+        `predictive integration ready: engine=${!!engine}, mesh=${!!mesh}, neuro-memory=${neuroStatus}, analytics=${JSON.stringify(status)}`,
+      );
+    }
+  } catch (err) {
+    params.log.warn(`predictive integration failed to start: ${String(err)}`);
   }
 
   // Start Gmail watcher if configured (hooks.gmail.account).
@@ -109,6 +187,14 @@ export async function startGatewaySidecars(params: {
     }
   } catch (err) {
     params.logHooks.error(`failed to load hooks: ${String(err)}`);
+  }
+
+  // Initialize plugin hooks system
+  try {
+    await initializeHooks();
+    params.logHooks.info(`plugin hooks initialized`);
+  } catch (err) {
+    params.logHooks.warn(`failed to initialize plugin hooks: ${String(err)}`);
   }
 
   // Launch configured channels so gateway replies via the surface the message came from.

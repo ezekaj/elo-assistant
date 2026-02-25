@@ -39,6 +39,11 @@ import { formatCliCommand } from "../cli/command-format.js";
 import { type CliDeps, createDefaultDeps } from "../cli/deps.js";
 import { loadConfig } from "../config/config.js";
 import {
+  normalizeEffortLevel,
+  validateEffortLevel,
+  type EffortLevel,
+} from "../config/effort-validator.js";
+import {
   resolveAgentIdFromSessionKey,
   resolveSessionFilePath,
   type SessionEntry,
@@ -116,6 +121,23 @@ export async function agentCommand(
   }
   if (opts.thinkingOnce && !thinkOnce) {
     throw new Error(`Invalid one-shot thinking level. Use one of: ${thinkingLevelsHint}.`);
+  }
+
+  // NEW: Validate effort level
+  const effortOverride = normalizeEffortLevel(opts.effort);
+  if (opts.effort && !effortOverride) {
+    throw new Error(
+      `Invalid effort level '${opts.effort}'. Valid options: low, medium, high, max.`,
+    );
+  }
+  // Validate effort against model
+  const effortValidation = validateEffortLevel(opts.effort || "", configuredModel);
+  if (opts.effort && !effortValidation.valid) {
+    throw new Error(effortValidation.error);
+  }
+  // Warn if effort is being ignored for this model (e.g., GLM)
+  if (opts.effort && effortValidation.ignored) {
+    runtime.log(`Note: ${effortValidation.reason}`);
   }
 
   const verboseOverride = normalizeVerboseLevel(opts.verbose);
@@ -444,6 +466,7 @@ export async function agentCommand(
               ? sessionEntry?.authProfileOverrideSource
               : undefined,
             thinkLevel: resolvedThinkLevel,
+            effortLevel: effortOverride, // NEW: Effort level
             verboseLevel: resolvedVerboseLevel,
             timeoutMs,
             runId,

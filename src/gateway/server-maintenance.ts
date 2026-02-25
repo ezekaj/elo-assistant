@@ -1,6 +1,7 @@
 import type { HealthSummary } from "../commands/health.js";
 import type { ChatRunEntry } from "./server-chat.js";
 import type { DedupeEntry } from "./server-shared.js";
+import { scheduleInterval, cancelInterval } from "../agents/timer-wheel.js";
 import { abortChatRunById, type ChatAbortControllerEntry } from "./chat-abort.js";
 import {
   DEDUPE_MAX,
@@ -38,9 +39,9 @@ export function startGatewayMaintenanceTimers(params: {
   agentRunSeq: Map<string, number>;
   nodeSendToSession: (sessionKey: string, event: string, payload: unknown) => void;
 }): {
-  tickInterval: ReturnType<typeof setInterval>;
-  healthInterval: ReturnType<typeof setInterval>;
-  dedupeCleanup: ReturnType<typeof setInterval>;
+  stopTick: () => void;
+  stopHealth: () => void;
+  stopDedupeCleanup: () => void;
 } {
   setBroadcastHealthUpdate((snap: HealthSummary) => {
     params.broadcast("health", snap, {
@@ -53,18 +54,20 @@ export function startGatewayMaintenanceTimers(params: {
   });
 
   // periodic keepalive
-  const tickInterval = setInterval(() => {
+  const tickTimerId = "gateway-tick";
+  scheduleInterval(tickTimerId, TICK_INTERVAL_MS, () => {
     const payload = { ts: Date.now() };
     params.broadcast("tick", payload, { dropIfSlow: true });
     params.nodeSendToAllSubscribed("tick", payload);
-  }, TICK_INTERVAL_MS);
+  });
 
   // periodic health refresh to keep cached snapshot warm
-  const healthInterval = setInterval(() => {
+  const healthTimerId = "gateway-health-refresh";
+  scheduleInterval(healthTimerId, HEALTH_REFRESH_INTERVAL_MS, () => {
     void params
       .refreshGatewayHealthSnapshot({ probe: true })
       .catch((err) => params.logHealth.error(`refresh failed: ${formatError(err)}`));
-  }, HEALTH_REFRESH_INTERVAL_MS);
+  });
 
   // Prime cache so first client gets a snapshot without waiting.
   void params
@@ -72,7 +75,8 @@ export function startGatewayMaintenanceTimers(params: {
     .catch((err) => params.logHealth.error(`initial refresh failed: ${formatError(err)}`));
 
   // dedupe cache cleanup
-  const dedupeCleanup = setInterval(() => {
+  const dedupeCleanupTimerId = "gateway-dedupe-cleanup";
+  scheduleInterval(dedupeCleanupTimerId, 60_000, () => {
     const now = Date.now();
     for (const [k, v] of params.dedupe) {
       if (now - v.ts > DEDUPE_TTL_MS) {
@@ -114,7 +118,11 @@ export function startGatewayMaintenanceTimers(params: {
       params.chatRunBuffers.delete(runId);
       params.chatDeltaSentAt.delete(runId);
     }
-  }, 60_000);
+  });
 
-  return { tickInterval, healthInterval, dedupeCleanup };
+  return {
+    stopTick: () => cancelInterval(tickTimerId),
+    stopHealth: () => cancelInterval(healthTimerId),
+    stopDedupeCleanup: () => cancelInterval(dedupeCleanupTimerId),
+  };
 }

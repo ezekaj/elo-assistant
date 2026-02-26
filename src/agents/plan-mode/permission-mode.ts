@@ -172,6 +172,10 @@ export function shouldPromptForTool(toolName: string): boolean {
 
   // In acceptEdits mode: auto-accept edit tools, prompt for destructive
   if (mode === "acceptEdits") {
+    // Read-only tools: never prompt
+    if (isReadOnlyTool(toolName)) {
+      return false;
+    }
     // Auto-accept edit tools
     if (isEditTool(toolName)) {
       return false;

@@ -1,6 +1,7 @@
 import type { SlashCommand } from "@mariozechner/pi-tui";
 import type { OpenClawConfig } from "../config/types.js";
 import { isPlanRequest, isDeepPlanRequest } from "../agents/plan-mode/auto-plan-detector.js";
+import { PERMISSION_MODE_DESCRIPTIONS } from "../agents/plan-mode/permission-mode.js";
 // Plan Mode imports
 import { isPlanMode, getPlanModeState, setPermissionMode } from "../agents/plan-mode/state.js";
 import { listChatCommands, listChatCommandsForConfig } from "../auto-reply/commands-registry.js";
@@ -21,6 +22,9 @@ const ELEVATED_LEVELS = ["on", "off", "ask", "full"];
 const ACTIVATION_LEVELS = ["mention", "always"];
 const USAGE_FOOTER_LEVELS = ["off", "tokens", "full"];
 
+// Permission mode levels for completions
+const PERMISSION_MODES = ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk"];
+
 export type ParsedCommand = {
   name: string;
   args: string;
@@ -34,6 +38,10 @@ export type SlashCommandOptions = {
 
 const COMMAND_ALIASES: Record<string, string> = {
   elev: "elevated",
+  perm: "permission",
+  perms: "permission",
+  accept: "accept-edits",
+  auto: "auto-approve",
 };
 
 export function parseCommand(input: string): ParsedCommand {
@@ -160,7 +168,24 @@ export function getSlashCommands(options: SlashCommandOptions = {}): SlashComman
       name: "hooks-status",
       description: "Show detailed hooks status",
     },
-    // Plan Mode commands
+    // Permission Mode commands
+    {
+      name: "permission",
+      description: "Set permission mode",
+      getArgumentCompletions: (prefix) =>
+        PERMISSION_MODES.filter((v) => v.startsWith(prefix.toLowerCase())).map((value) => ({
+          value,
+          label: `${value} - ${PERMISSION_MODE_DESCRIPTIONS[value]?.description || ""}`,
+        })),
+    },
+    {
+      name: "accept-edits",
+      description: "Auto-accept file edits, prompt for commands",
+    },
+    {
+      name: "auto-approve",
+      description: "Auto-approve all operations (bypass permissions)",
+    },
     {
       name: "enter-plan-mode",
       description: "Enter plan mode (no tool execution)",
@@ -172,6 +197,50 @@ export function getSlashCommands(options: SlashCommandOptions = {}): SlashComman
     {
       name: "plan-status",
       description: "Show plan mode status",
+    },
+    // YOLO Mode commands
+    {
+      name: "yolo",
+      description: "Toggle YOLO mode (auto-approve all tools)",
+      getArgumentCompletions: (prefix) => [
+        { value: "on", label: "Enable YOLO mode" },
+        { value: "off", label: "Disable YOLO mode" },
+        { value: "status", label: "Check YOLO status" },
+        { value: "confirm", label: "Confirm YOLO enablement" },
+      ],
+    },
+    // Vim Mode commands
+    {
+      name: "vim",
+      description: "Toggle Vim mode on/off",
+      getArgumentCompletions: (prefix) => [
+        { value: "on", label: "Enable Vim mode" },
+        { value: "off", label: "Disable Vim mode" },
+        { value: "status", label: "Show Vim status" },
+      ],
+    },
+    {
+      name: "vim-status",
+      description: "Show detailed Vim mode status",
+    },
+    // File History commands
+    {
+      name: "checkpoint",
+      description: "Create/manage file checkpoints",
+      getArgumentCompletions: (prefix) => [
+        { value: "create <name>", label: "Create checkpoint" },
+        { value: "list", label: "List checkpoints" },
+        { value: "restore <name>", label: "Restore checkpoint" },
+        { value: "diff <name1> <name2>", label: "Compare checkpoints" },
+      ],
+    },
+    {
+      name: "rewind",
+      description: "Rewind files to previous state",
+    },
+    {
+      name: "file-history",
+      description: "Show file history status",
     },
     // Streaming commands
     {
@@ -242,6 +311,12 @@ export function helpText(options: SlashCommandOptions = {}): string {
     ? ` (teleported from ${teleportInfo.sessionId})`
     : "";
 
+  // Get current permission mode
+  const permState = getPlanModeState();
+  const permMode = permState.currentMode;
+  const permDesc = PERMISSION_MODE_DESCRIPTIONS[permMode];
+  const permStatus = permDesc ? ` (${permDesc.symbol} ${permDesc.name})` : "";
+
   return [
     "Slash commands:",
     "/help",
@@ -257,8 +332,21 @@ export function helpText(options: SlashCommandOptions = {}): string {
     "/elevated <on|off|ask|full>",
     "/elev <on|off|ask|full>",
     "/effort <low|medium|high|max>",
+    "",
+    "# Permission modes:",
+    "/permission <default|acceptEdits|bypassPermissions|plan|dontAsk>",
+    "/accept-edits        # Auto-accept file edits, prompt for commands",
+    "/auto-approve        # Auto-approve everything (bypass)",
+    "/enter-plan-mode     # Read-only, no execution",
+    "/exit-plan-mode      # Return to default mode",
+    "/plan-status         # Show current mode",
+    "",
+    "# Other:",
     "/hooks",
     "/hooks-status",
+    "/checkpoint create|list|restore|diff",
+    "/rewind <message-id>",
+    "/file-history",
     "/teleport <session-id>",
     "/teleport-status",
     "/teleport-complete",
@@ -271,5 +359,6 @@ export function helpText(options: SlashCommandOptions = {}): string {
     "/exit",
     "",
     `Active hooks: ${hookCount}${teleportStatus}`,
+    `Permission mode: ${permMode}${permStatus}`,
   ].join("\n");
 }

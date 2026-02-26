@@ -9,8 +9,10 @@ import type {
   TuiOptions,
   TuiStateAccess,
 } from "./tui-types.js";
+import { PERMISSION_MODE_DESCRIPTIONS } from "../agents/plan-mode/permission-mode.js";
 // Plan Mode imports
 import { isPlanMode, getPlanModeState, setPermissionMode } from "../agents/plan-mode/state.js";
+import { getYoloModeManager, isYoloModeActive, YOLO_WARNING } from "../agents/yolo-mode/index.js";
 import {
   formatThinkingLevels,
   normalizeUsageDisplay,
@@ -27,6 +29,13 @@ import {
 } from "./components/selectors.js";
 import { createStreamingDisplay, streamSSE } from "./components/streaming-display.js";
 import { formatStatusSummary } from "./tui-status-summary.js";
+import {
+  isVimModeEnabled,
+  getCurrentVimMode,
+  toggleVimMode,
+  getVimState,
+  setVimModeEnabled,
+} from "./vim-mode/vim-state.js";
 
 type CommandHandlerContext = {
   client: GatewayChatClient;
@@ -694,13 +703,178 @@ export function createCommandHandlers(context: CommandHandlerContext) {
 
       case "plan-status": {
         const state = getPlanModeState();
+        const desc = PERMISSION_MODE_DESCRIPTIONS[state.currentMode];
         chatLog.addSystem(
-          `Plan Mode Status:\n` +
-            `  Mode: ${state.currentMode}\n` +
-            `  Has Exited: ${state.hasExitedPlanMode}\n` +
+          `Permission Mode Status:\n` +
+            `  Mode: ${state.currentMode}${desc?.symbol ? ` (${desc.symbol})` : ""}\n` +
+            `  Description: ${desc?.description || "N/A"}\n` +
+            `  Has Exited Plan: ${state.hasExitedPlanMode}\n` +
             `  Awaiting Approval: ${state.awaitingPlanApproval}\n` +
             `  Approved Domains: ${state.approvedDomains.join(", ") || "none"}`,
         );
+        break;
+      }
+
+      // YOLO Mode commands
+      case "yolo": {
+        const yoloManager = getYoloModeManager();
+        const action = parsed.args.toLowerCase().trim() || "toggle";
+
+        if (action === "on" || action === "enable") {
+          // Request enable (shows warning)
+          const result = yoloManager.requestEnable();
+
+          if (result.requiresConfirmation && result.warning) {
+            chatLog.addSystem(result.warning);
+            chatLog.addSystem("");
+            chatLog.addSystem('Type "/yolo confirm" to enable, or any other command to cancel.');
+          } else if (result.requiresConfirmation === false) {
+            // Already enabled or no warning needed
+            chatLog.addSystem(yoloManager.getStatus());
+          }
+        } else if (action === "confirm") {
+          // Confirm enablement
+          const result = yoloManager.confirmEnable();
+          chatLog.addSystem(result.message);
+          if (result.success) {
+            chatLog.addSystem("");
+            chatLog.addSystem("⚠️  All tool calls will now be auto-approved.");
+            chatLog.addSystem('⚠️  Use "/yolo off" to disable.');
+          }
+        } else if (action === "off" || action === "disable") {
+          // Disable YOLO mode
+          const result = yoloManager.disableYolo();
+          chatLog.addSystem(result.message);
+        } else if (action === "status") {
+          // Show status
+          chatLog.addSystem(yoloManager.getStatus());
+        } else {
+          // Toggle
+          const result = yoloManager.toggleYolo();
+          if (result.message) {
+            chatLog.addSystem(result.message);
+          }
+          if (result.requiresConfirmation && result.warning) {
+            chatLog.addSystem(result.warning);
+          }
+        }
+
+        updateFooter();
+        break;
+      }
+
+      // Vim Mode commands
+      case "vim": {
+        const subcommand = parsed.args?.toLowerCase().trim();
+
+        if (subcommand === "on" || subcommand === "enable") {
+          setVimModeEnabled(true);
+          chatLog.addSystem(
+            "✅ Vim mode ENABLED. Press Escape to toggle between INSERT and NORMAL modes.",
+          );
+        } else if (subcommand === "off" || subcommand === "disable") {
+          setVimModeEnabled(false);
+          chatLog.addSystem("✅ Vim mode DISABLED. Using standard keyboard bindings.");
+        } else {
+          // Toggle
+          const enabled = toggleVimMode();
+          if (enabled) {
+            chatLog.addSystem(
+              "✅ Vim mode ENABLED. Press Escape to toggle between INSERT and NORMAL modes.",
+            );
+          } else {
+            chatLog.addSystem("✅ Vim mode DISABLED. Using standard keyboard bindings.");
+          }
+        }
+        updateFooter();
+        break;
+      }
+
+      case "vim-status": {
+        const enabled = isVimModeEnabled();
+        const mode = getCurrentVimMode();
+        const state = getVimState();
+
+        if (!enabled) {
+          chatLog.addSystem("Vim mode is DISABLED\nUse /vim to enable.");
+        } else {
+          chatLog.addSystem(
+            `Vim Mode Status:\n` +
+              `  Enabled: Yes\n` +
+              `  Current Mode: ${mode}\n` +
+              `  Pending Operator: ${state.pendingOperator || "none"}\n` +
+              `\n` +
+              `NORMAL mode keys:\n` +
+              `  h/j/k/l - Move cursor\n` +
+              `  w/b/e   - Word movement\n` +
+              `  0/$     - Line start/end\n` +
+              `  i/a/I/A - Enter INSERT mode\n` +
+              `  o/O     - Open line\n` +
+              `  v       - Visual mode\n` +
+              `  x/dd    - Delete\n` +
+              `  Escape  - Toggle INSERT/NORMAL`,
+          );
+        }
+        break;
+      }
+
+      // Permission Mode commands (works with ANY model)
+      case "permission": {
+        const modeArg = parsed.args.toLowerCase().trim();
+        if (!modeArg) {
+          // Show current mode
+          const state = getPlanModeState();
+          const desc = PERMISSION_MODE_DESCRIPTIONS[state.currentMode];
+          chatLog.addSystem(
+            `Current mode: ${state.currentMode}\n` +
+              `Description: ${desc?.description || "N/A"}\n\n` +
+              `Available modes:\n` +
+              Object.entries(PERMISSION_MODE_DESCRIPTIONS)
+                .map(([k, v]) => `  ${k.padEnd(20)} - ${v.description}`)
+                .join("\n"),
+          );
+          break;
+        }
+
+        // Validate mode
+        const validModes = Object.keys(PERMISSION_MODE_DESCRIPTIONS);
+        if (!validModes.includes(modeArg)) {
+          chatLog.addSystem(`Invalid mode: ${modeArg}\n` + `Valid modes: ${validModes.join(", ")}`);
+          break;
+        }
+
+        setPermissionMode(modeArg as any);
+        const newDesc = PERMISSION_MODE_DESCRIPTIONS[modeArg];
+        chatLog.addSystem(
+          `✅ Permission mode set to: ${modeArg}\n` + `${newDesc.symbol} ${newDesc.description}`,
+        );
+        updateFooter();
+        break;
+      }
+
+      case "accept-edits": {
+        setPermissionMode("acceptEdits");
+        const desc = PERMISSION_MODE_DESCRIPTIONS.acceptEdits;
+        chatLog.addSystem(
+          `✅ Accept Edits mode enabled\n` +
+            `${desc.symbol} ${desc.description}\n\n` +
+            `File edits (Write, Edit, NotebookEdit) will be auto-approved.\n` +
+            `Destructive operations (Bash, etc.) will still prompt.`,
+        );
+        updateFooter();
+        break;
+      }
+
+      case "auto-approve": {
+        setPermissionMode("bypassPermissions");
+        const desc = PERMISSION_MODE_DESCRIPTIONS.bypassPermissions;
+        chatLog.addSystem(
+          `⚠️ Auto-approve mode enabled\n` +
+            `${desc.symbol} ${desc.description}\n\n` +
+            `ALL operations will be auto-approved without prompting.\n` +
+            `Use with caution!`,
+        );
+        updateFooter();
         break;
       }
 

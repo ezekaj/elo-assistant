@@ -6,20 +6,24 @@
  * - Process tool results (PostToolUse)
  * - Handle tool failures (PostToolUseFailure)
  *
- * Also includes Plan Mode blocking for read-only tool execution.
- * Supports automatic plan detection from user messages.
+ * Also includes Plan Mode blocking and AcceptEdits permission checking.
+ * Works with ANY LLM provider (client-side feature).
  */
 
 import type { HookExecutionResult } from "../hooks/executor.js";
 import type { AnyAgentTool } from "./tools/common.js";
 import { globalHookExecutor } from "../hooks/executor.js";
-import { isPlanRequest, isDeepPlanRequest } from "./plan-mode/auto-plan-detector.js";
 import {
   shouldBlockToolExecution,
   getToolBlockReason,
   getPermissionMode,
   setPermissionMode,
+  shouldPromptForTool,
+  getToolPermissionDecision,
+  getToolCategory,
+  PERMISSION_MODE_DESCRIPTIONS,
 } from "./plan-mode/permission-mode.js";
+import { isYoloModeActive } from "./yolo-mode/index.js";
 
 /**
  * Tool execution result
@@ -31,6 +35,44 @@ export interface ToolExecutionResult {
   result?: unknown;
   updatedInput?: Record<string, unknown>;
   additionalContext?: string;
+  /** Current permission mode */
+  permissionMode?: string;
+  /** Whether this tool would normally require approval (for gateway mode) */
+  needsApproval?: boolean;
+  /** Tool category for display */
+  toolCategory?: "edit" | "destructive" | "readonly" | "unknown";
+  /** Permission decision for this tool */
+  permissionDecision?: "auto-approve" | "prompt" | "block";
+}
+
+/**
+ * Get permission info for a tool (for gateway mode)
+ * Returns metadata about whether the tool needs approval
+ */
+export function getToolPermissionInfo(toolName: string): {
+  toolCategory: "edit" | "destructive" | "readonly" | "unknown";
+  permissionDecision: "auto-approve" | "prompt" | "block";
+  needsApproval: boolean;
+  permissionMode: string;
+} {
+  const category = getToolCategory(toolName);
+  const decision = getToolPermissionDecision(toolName);
+  const mode = getPermissionMode();
+
+  return {
+    toolCategory: category,
+    permissionDecision: decision,
+    needsApproval: decision === "prompt",
+    permissionMode: mode,
+  };
+}
+
+/**
+ * Check if a tool should be auto-approved in current mode
+ * Useful for gateway to skip approval UI
+ */
+export function isToolAutoApprovedInCurrentMode(toolName: string): boolean {
+  return getToolPermissionDecision(toolName) === "auto-approve";
 }
 
 /**
@@ -52,14 +94,20 @@ export async function executeToolWithHooks(
     permission_mode?: string;
   },
 ): Promise<ToolExecutionResult> {
-  // ADD: Check plan mode blocking FIRST (before hooks)
-  const planModeBlock = shouldBlockToolExecution(tool.name);
-  if (planModeBlock) {
-    return {
-      blocked: true,
-      reason: getToolBlockReason(tool.name),
-      permissionMode: getPermissionMode(),
-    };
+  // YOLO mode check - bypasses all permission checks
+  if (isYoloModeActive()) {
+    // In YOLO mode, skip plan mode blocking
+    // Only hook blocking still applies
+  } else {
+    // ADD: Check plan mode blocking FIRST (before hooks)
+    const planModeBlock = shouldBlockToolExecution(tool.name);
+    if (planModeBlock) {
+      return {
+        blocked: true,
+        reason: getToolBlockReason(tool.name),
+        permissionMode: getPermissionMode(),
+      };
+    }
   }
 
   // Build base context for hooks
@@ -101,6 +149,34 @@ export async function executeToolWithHooks(
 
   // Use modified input if provided
   const finalArgs = preToolUseResult.updatedInput || args;
+
+  // ========================================
+  // CREATE FILE SNAPSHOT (before edit tools)
+  // ========================================
+  let snapshotId: string | undefined;
+  const editTools = ["edit", "write", "notebookedit", "notebook_write"];
+  const isEditTool = editTools.some((t) => tool.name.toLowerCase().includes(t));
+
+  if (isEditTool && fileHistoryManager) {
+    try {
+      // Track file if path provided
+      const filePath = (finalArgs as any).path || (finalArgs as any).file_path;
+      if (filePath) {
+        fileHistoryManager.trackFile(filePath);
+      }
+
+      // Create snapshot before edit
+      const snapshot = await fileHistoryManager.createSnapshot(context.tool_use_id, {
+        description: `Before ${tool.name} tool execution`,
+      });
+      if (snapshot) {
+        snapshotId = snapshot.id;
+      }
+    } catch (error) {
+      log.debug(`Failed to create file snapshot: ${error}`);
+      // Continue even if snapshot fails
+    }
+  }
 
   // ========================================
   // EXECUTE TOOL
@@ -158,6 +234,7 @@ export async function executeToolWithHooks(
     const returnValue: ToolExecutionResult = {
       blocked: false,
       result: finalResult,
+      snapshotId,
     };
 
     // Add additional context

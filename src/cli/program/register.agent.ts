@@ -19,6 +19,9 @@ import { collectOption } from "./helpers.js";
 
 export function registerAgentCommands(program: Command, args: { agentChannelOptions: string }) {
   program
+    .option("--yolo", "Enable YOLO mode (auto-approve all tool calls)")
+    .option("--yolo-session", "Enable YOLO mode for this session only")
+    .option("--no-yolo", "Disable YOLO mode (override config)")
     .command("agent")
     .description("Run an agent turn via the Gateway (use --local for embedded)")
     .requiredOption("-m, --message <text>", "Message body for the agent")

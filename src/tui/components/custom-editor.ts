@@ -1,4 +1,6 @@
 import { Editor, Key, matchesKey } from "@mariozechner/pi-tui";
+import { createVimKeybindingsHandler } from "../vim-mode/vim-keybindings.js";
+import { isVimModeEnabled, getCurrentVimMode } from "../vim-mode/vim-state.js";
 
 export class CustomEditor extends Editor {
   onEscape?: () => void;
@@ -12,7 +14,18 @@ export class CustomEditor extends Editor {
   onShiftTab?: () => void;
   onAltEnter?: () => void;
 
+  private vimHandler = createVimKeybindingsHandler(this);
+
   handleInput(data: string): void {
+    // First, try Vim keybindings
+    if (isVimModeEnabled()) {
+      const handled = this.vimHandler.handleKey(data);
+      if (handled) {
+        return;
+      }
+    }
+
+    // Then handle special keys
     if (matchesKey(data, Key.alt("enter")) && this.onAltEnter) {
       this.onAltEnter();
       return;
@@ -55,6 +68,7 @@ export class CustomEditor extends Editor {
       }
       return;
     }
+
     super.handleInput(data);
   }
 }

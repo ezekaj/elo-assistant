@@ -136,6 +136,11 @@ export class AgentEventMesh {
       this.bus.setMaxListeners(config.maxListeners);
     }
 
+    // Initialize database schema if db is provided
+    if (this.db && this.enablePersistence) {
+      this.initializeDatabase();
+    }
+
     // Initialize neuro-memory if enabled
     if (this.neuroMemoryConfig?.enabled) {
       const agentPath =
@@ -143,6 +148,46 @@ export class AgentEventMesh {
       initNeuroMemory(agentPath).catch((err) => {
         log.warn("Failed to initialize neuro-memory:", err);
       });
+    }
+  }
+
+  /**
+   * Initialize database schema for event persistence
+   */
+  private initializeDatabase(): void {
+    try {
+      this.db
+        .prepare(`
+        CREATE TABLE IF NOT EXISTS agent_events (
+          id TEXT PRIMARY KEY,
+          type TEXT NOT NULL,
+          source TEXT NOT NULL,
+          timestamp INTEGER NOT NULL,
+          data TEXT NOT NULL,
+          metadata TEXT DEFAULT '{}',
+          created_at INTEGER DEFAULT (unixepoch())
+        )
+      `)
+        .run();
+
+      // Create index for faster queries
+      this.db
+        .prepare(`
+        CREATE INDEX IF NOT EXISTS idx_agent_events_type 
+        ON agent_events(type, timestamp)
+      `)
+        .run();
+
+      this.db
+        .prepare(`
+        CREATE INDEX IF NOT EXISTS idx_agent_events_source 
+        ON agent_events(source, timestamp)
+      `)
+        .run();
+
+      log.debug("Event mesh database schema initialized");
+    } catch (error) {
+      log.error("Failed to initialize event mesh database:", error);
     }
   }
 

@@ -516,6 +516,14 @@ export function getEventMesh(config?: EventMeshConfig): AgentEventMesh {
   return instance;
 }
 
+/**
+ * Try to get the EventMesh instance without throwing.
+ * Returns null if not initialized - use this for optional event emission.
+ */
+export function tryGetEventMesh(): AgentEventMesh | null {
+  return instance;
+}
+
 export function initEventMesh(config: EventMeshConfig): AgentEventMesh {
   instance = new AgentEventMesh(config);
   return instance;

@@ -286,8 +286,8 @@ export async function recordCompaction(
   // HYBRID INTEGRATION: Emit event for neuro-memory storage
   // This allows briefing summaries to be stored in ChromaDB for similarity-based retrieval
   try {
-    const { getEventMesh } = await import("./event-mesh.js");
-    const eventMesh = getEventMesh();
+    const { tryGetEventMesh } = await import("./event-mesh.js");
+    const eventMesh = tryGetEventMesh();
 
     if (eventMesh) {
       await eventMesh.emit("compaction_summary", {

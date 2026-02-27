@@ -1,22 +1,22 @@
 /**
  * Compaction Orchestrator
- * 
+ *
  * Implements Claude Code's two-stage compaction strategy:
  * 1. Try session memory compaction first (fast, incremental)
  * 2. Fallback to regular compaction (full, with attachments)
- * 
+ *
  * Based on Claude Code source (lines 276461-276490)
  */
 
+import type { OpenClawConfig } from "../config/config.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import {
   shouldTriggerAutoCompact,
   calculateAutoCompactThreshold,
   checkThresholds,
-  isAutoCompactEnabled
+  isAutoCompactEnabled,
 } from "./compaction-thresholds.js";
 import { compactEmbeddedPiSession } from "./pi-embedded.js";
-import type { OpenClawConfig } from "../config/config.js";
 
 const log = createSubsystemLogger("compaction-orchestrator");
 
@@ -52,51 +52,45 @@ export interface CompactionContext {
 /**
  * Perform compaction with Claude Code's two-stage strategy
  */
-export async function performCompaction(
-  context: CompactionContext
-): Promise<CompactionResult> {
+export async function performCompaction(context: CompactionContext): Promise<CompactionResult> {
   // Check if compaction is disabled
   if (isTruthy(process.env.DISABLE_COMPACT)) {
     log.debug("Compaction disabled via environment variable");
     return { wasCompacted: false, reason: "disabled" };
   }
-  
+
   const { messages, model, source } = context;
-  
+
   // Count current tokens
   const currentTokens = countMessagesTokens(messages);
   const threshold = calculateAutoCompactThreshold(model);
-  
+
   log.debug(
     `Compaction check: ${currentTokens.toLocaleString()} tokens, ` +
-    `threshold: ${threshold.toLocaleString()}`
+      `threshold: ${threshold.toLocaleString()}`,
   );
-  
+
   // Check if should compact
-  const shouldCompact = await shouldTriggerAutoCompact(
-    currentTokens,
-    model,
-    source
-  );
-  
+  const shouldCompact = await shouldTriggerAutoCompact(currentTokens, model, source);
+
   if (!shouldCompact) {
     log.debug("Skipping compaction: below threshold");
     return {
       wasCompacted: false,
       reason: "below threshold",
       tokenCount: currentTokens,
-      threshold
+      threshold,
     };
   }
-  
+
   log.info(
-    `Triggering compaction: ${currentTokens.toLocaleString()} >= ${threshold.toLocaleString()}`
+    `Triggering compaction: ${currentTokens.toLocaleString()} >= ${threshold.toLocaleString()}`,
   );
-  
+
   // Stage 1: Try session memory compaction (TUR function)
   log.debug("Attempting session memory compaction...");
   const sessionMemoryResult = await trySessionMemoryCompaction(context);
-  
+
   if (sessionMemoryResult) {
     log.info("Session memory compaction successful");
     clearCaches();
@@ -105,14 +99,14 @@ export async function performCompaction(
       compactionResult: sessionMemoryResult,
       reason: "session memory",
       tokenCount: sessionMemoryResult.postCompactTokenCount,
-      threshold
+      threshold,
     };
   }
-  
+
   // Stage 2: Fallback to regular compaction (xET function)
   log.debug("Session memory compaction failed, trying regular compaction...");
   const regularResult = await tryRegularCompaction(context);
-  
+
   if (regularResult) {
     log.info("Regular compaction successful");
     clearCaches();
@@ -121,17 +115,17 @@ export async function performCompaction(
       compactionResult: regularResult,
       reason: "regular",
       tokenCount: regularResult.postCompactTokenCount,
-      threshold
+      threshold,
     };
   }
-  
+
   // Both stages failed
   log.warn("Both compaction methods failed");
   return {
     wasCompacted: false,
     reason: "both methods failed",
     tokenCount: currentTokens,
-    threshold
+    threshold,
   };
 }
 
@@ -142,32 +136,30 @@ export async function performCompaction(
 /**
  * Try session memory compaction (fast, incremental)
  */
-async function trySessionMemoryCompaction(
-  context: CompactionContext
-): Promise<any | null> {
+async function trySessionMemoryCompaction(context: CompactionContext): Promise<any | null> {
   try {
     // Check if session memory is enabled
     if (!isSessionMemoryEnabled()) {
       log.debug("Session memory compaction disabled");
       return null;
     }
-    
+
     // Initialize session memory
     await initializeSessionMemory();
-    
+
     // Get session memory template
     const template = await getSessionMemoryTemplate(context.agentId);
     if (!template) {
       log.debug("No session memory template");
       return null;
     }
-    
+
     // Check if template is empty
     if (await isTemplateEmpty(template)) {
       log.debug("Session memory template is empty");
       return null;
     }
-    
+
     // Trigger compaction via existing OpenClaw infrastructure
     const result = await compactEmbeddedPiSession({
       sessionId: context.sessionId,
@@ -175,21 +167,21 @@ async function trySessionMemoryCompaction(
       sessionFile: context.sessionFile,
       workspaceDir: context.workspaceDir,
       config: context.config,
-      customInstructions: context.customInstructions || 
-        "Compact this conversation while preserving all important context, decisions, and open tasks."
+      customInstructions:
+        context.customInstructions ||
+        "Compact this conversation while preserving all important context, decisions, and open tasks.",
     });
-    
+
     if (result.ok && result.compacted) {
       log.debug("Session memory compaction completed");
       return {
         success: true,
         method: "session_memory",
-        postCompactTokenCount: result.result?.tokensAfter || result.result?.tokensBefore || 0
+        postCompactTokenCount: result.result?.tokensAfter || result.result?.tokensBefore || 0,
       };
     }
 
     return null;
-
   } catch (error) {
     log.debug("Session memory compaction error:", error);
     return null;
@@ -203,9 +195,7 @@ async function trySessionMemoryCompaction(
 /**
  * Try regular compaction (full, with attachments)
  */
-async function tryRegularCompaction(
-  context: CompactionContext
-): Promise<any | null> {
+async function tryRegularCompaction(context: CompactionContext): Promise<any | null> {
   try {
     // Trigger compaction via existing OpenClaw infrastructure
     const result = await compactEmbeddedPiSession({
@@ -214,22 +204,22 @@ async function tryRegularCompaction(
       sessionFile: context.sessionFile,
       workspaceDir: context.workspaceDir,
       config: context.config,
-      customInstructions: context.customInstructions ||
+      customInstructions:
+        context.customInstructions ||
         "Compact this conversation while preserving all important context, decisions, open tasks, " +
-        "file references, and action items. Keep it concise but complete."
+          "file references, and action items. Keep it concise but complete.",
     });
-    
+
     if (result.ok && result.compacted) {
       log.debug("Regular compaction completed");
       return {
         success: true,
         method: "regular",
-        postCompactTokenCount: result.result?.tokensAfter || result.result?.tokensBefore || 0
+        postCompactTokenCount: result.result?.tokensAfter || result.result?.tokensBefore || 0,
       };
     }
 
     return null;
-
   } catch (error) {
     log.error("Regular compaction error:", error);
     return null;
@@ -254,9 +244,11 @@ function countMessagesTokens(messages: any[]): number {
  * Check if session memory is enabled
  */
 function isSessionMemoryEnabled(): boolean {
-  return isTruthy(process.env.ENABLE_CLAUDE_CODE_SM_COMPACT) ||
+  return (
+    isTruthy(process.env.ENABLE_CLAUDE_CODE_SM_COMPACT) ||
     (isTruthy(process.env.A9?.("tengu_session_memory")) &&
-     isTruthy(process.env.A9?.("tengu_sm_compact")));
+      isTruthy(process.env.A9?.("tengu_sm_compact")))
+  );
 }
 
 /**
@@ -286,7 +278,7 @@ async function isTemplateEmpty(template: any): Promise<boolean> {
 /**
  * Clear caches after compaction
  */
-function clearCaches(): void {
+async function clearCaches(): Promise<void> {
   // Clear system prompt section cache
   try {
     const { clearSystemPromptSectionCache } = await import("./system-prompt-cache.js");
@@ -294,7 +286,7 @@ function clearCaches(): void {
   } catch {
     // Cache module not available
   }
-  
+
   log.debug("Caches cleared");
 }
 
@@ -313,7 +305,4 @@ function isTruthy(value: string | undefined): boolean {
 // EXPORTS
 // ============================================================================
 
-export type {
-  CompactionResult,
-  CompactionContext
-};
+export type { CompactionResult, CompactionContext };

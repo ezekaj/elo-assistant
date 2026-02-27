@@ -513,3 +513,11 @@ export function createPluginRegistry(registryParams: PluginRegistryParams) {
     registerTypedHook,
   };
 }
+
+/**
+ * Load plugin registry from global state
+ */
+export function loadPluginRegistry(): PluginRegistry | null {
+  const { getGlobalPluginRegistry } = require("./hook-runner-global.js");
+  return getGlobalPluginRegistry();
+}

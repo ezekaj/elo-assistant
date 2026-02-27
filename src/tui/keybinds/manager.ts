@@ -1,54 +1,52 @@
 /**
  * Keybinding Manager
  *
- * Central manager for keybinding registration, matching, and dispatch.
- * Supports multiple profiles, custom bindings, and context-aware matching.
+ * Central manager for all keybindings in the TUI.
+ * Handles registration, lookup, conflict detection, and profiles.
  */
 
-import { matchesKey, Key } from "@mariozechner/pi-tui";
+import { EventEmitter } from "events";
 import type {
   KeyBinding,
-  CompiledBinding,
-  KeybindProfile,
   KeybindConfig,
+  KeybindProfile,
   KeyAction,
-  KeybindEvent,
-  KeybindHandler,
+  KeybindContext,
+  KeybindConflict,
+  KeybindChangeEvent,
   KeyModifier,
 } from "./types.js";
-import { PROFILES, DEFAULT_BINDINGS, ACTION_DESCRIPTIONS } from "./defaults.js";
-import { bindingKey, calculatePriority, formatBinding, parseBinding } from "./types.js";
+import { DEFAULT_PROFILE, DEFAULT_BINDINGS, PROFILES } from "./defaults.js";
+import { KeyParser, keyParser } from "./parser.js";
+import { MODIFIER_ORDER } from "./types.js";
 
-// ============================================================================
-// MANAGER CLASS
-// ============================================================================
-
-export class KeybindingManager {
-  /** All registered bindings, compiled for fast matching */
-  private bindings: CompiledBinding[] = [];
-
-  /** Bindings indexed by action for quick lookup */
-  private byAction: Map<KeyAction, CompiledBinding[]> = new Map();
-
-  /** Current context */
-  private currentContext: "input" | "output" | "autocomplete" = "input";
-
-  /** Active profile name */
+/**
+ * Keybinding Manager
+ *
+ * Manages all keybindings, profiles, and provides lookup functionality.
+ */
+export class KeybindingManager extends EventEmitter {
+  private bindings: Map<string, KeyBinding> = new Map();
+  private bindingsByAction: Map<KeyAction, Set<string>> = new Map();
   private activeProfile: string = "default";
+  private disabledBindings: Set<string> = new Set();
+  private parser: KeyParser;
+  private currentContext: KeybindContext = "global";
 
-  /** Custom bindings from config */
-  private customBindings: KeyBinding[] = [];
+  /**
+   * Built-in profiles (vim and emacs will be added later)
+   */
+  private builtinProfiles: Record<string, KeybindProfile> = PROFILES;
 
-  /** Disabled actions */
-  private disabledActions: Set<KeyAction> = new Set();
-
-  /** Registered handlers per action */
-  private handlers: Map<KeyAction, Set<KeybindHandler>> = new Map();
-
-  /** Global handlers (called for all actions) */
-  private globalHandlers: Set<KeybindHandler> = new Set();
+  /**
+   * Custom user profiles
+   */
+  private customProfiles: Record<string, KeybindProfile> = {};
 
   constructor(config?: Partial<KeybindConfig>) {
+    super();
+    this.parser = keyParser;
+
     if (config) {
       this.loadConfig(config);
     } else {
@@ -64,62 +62,81 @@ export class KeybindingManager {
    * Load default bindings
    */
   loadDefaults(): void {
-    this.bindings = [];
-    this.byAction.clear();
-    this.registerAll(DEFAULT_BINDINGS);
-    this.sortBindings();
+    this.bindings.clear();
+    this.bindingsByAction.clear();
+    this.disabledBindings.clear();
+    this.activeProfile = "default";
+
+    for (const binding of DEFAULT_BINDINGS) {
+      this.register(binding);
+    }
   }
 
   /**
    * Load configuration
    */
   loadConfig(config: Partial<KeybindConfig>): void {
-    // Load profile
-    if (config.activeProfile) {
-      this.loadProfile(config.activeProfile);
-    } else {
-      this.loadDefaults();
+    this.loadDefaults();
+
+    // Load active profile
+    if (config.activeProfile && config.activeProfile !== "default") {
+      try {
+        this.loadProfile(config.activeProfile);
+      } catch (err) {
+        console.warn(`Failed to load profile ${config.activeProfile}:`, err);
+      }
     }
 
     // Apply custom bindings
     if (config.customBindings) {
-      this.customBindings = config.customBindings;
-      for (const binding of config.customBindings) {
+      for (const binding of Object.values(config.customBindings)) {
         this.register(binding);
       }
     }
 
-    // Disable actions
-    if (config.disabledActions) {
-      this.disabledActions = new Set(config.disabledActions);
+    // Apply disabled bindings
+    if (config.disabledBindings) {
+      for (const id of config.disabledBindings) {
+        this.disable(id);
+      }
     }
 
-    this.sortBindings();
+    // Load custom profiles
+    if (config.profiles) {
+      for (const [name, profile] of Object.entries(config.profiles)) {
+        if (!profile.builtin) {
+          this.customProfiles[name] = profile;
+        }
+      }
+    }
   }
 
   /**
-   * Load a named profile
+   * Load a profile by name
    */
   loadProfile(name: string): void {
-    const profile = PROFILES[name];
+    let profile = this.builtinProfiles[name] ?? this.customProfiles[name];
+
     if (!profile) {
-      console.warn(`[KeybindManager] Unknown profile: ${name}, using default`);
-      this.loadDefaults();
-      return;
+      // Fall back to default profile if requested profile doesn't exist
+      console.warn(`Unknown profile: ${name}, falling back to default`);
+      profile = this.builtinProfiles["default"];
+      name = "default";
     }
 
-    // If profile extends another, load base first
-    if (profile.extends) {
-      this.loadProfile(profile.extends);
-    } else {
-      this.bindings = [];
-      this.byAction.clear();
+    const oldProfile = this.activeProfile;
+
+    // Clear current bindings
+    this.bindings.clear();
+    this.bindingsByAction.clear();
+
+    // Load profile bindings
+    for (const binding of profile.bindings) {
+      this.register(binding);
     }
 
-    // Register profile bindings
-    this.registerAll(profile.bindings);
     this.activeProfile = name;
-    this.sortBindings();
+    this.emit("profile-change", { type: "profile-change", oldProfile, newProfile: name });
   }
 
   // ============================================================================
@@ -127,221 +144,222 @@ export class KeybindingManager {
   // ============================================================================
 
   /**
-   * Register a single binding
+   * Register a keybinding
    */
   register(binding: KeyBinding): void {
-    const compiled = this.compile(binding);
+    // Validate
+    this.validateBinding(binding);
 
-    // Add to main list
-    this.bindings.push(compiled);
+    // Check for conflicts
+    const conflicts = this.findConflicts(binding);
+    if (conflicts.length > 0) {
+      // Higher priority wins, warn if equal or lower
+      const bindingPriority = binding.priority ?? 50;
+      const hasLowerPriorityOnly = conflicts.every((c) => (c.priority ?? 50) < bindingPriority);
 
-    // Index by action
-    const existing = this.byAction.get(binding.action) || [];
-    existing.push(compiled);
-    this.byAction.set(binding.action, existing);
-  }
-
-  /**
-   * Register multiple bindings
-   */
-  registerAll(bindings: KeyBinding[]): void {
-    for (const binding of bindings) {
-      this.register(binding);
+      if (!hasLowerPriorityOnly) {
+        // Still register, but warn
+        const conflictIds = conflicts.map((c) => c.id).join(", ");
+        console.warn(`[KeybindManager] Binding "${binding.id}" conflicts with: ${conflictIds}`);
+      }
     }
+
+    // Generate lookup key
+    const key = this.bindingToKey(binding);
+
+    // Add to bindings map
+    this.bindings.set(key, binding);
+
+    // Add to action index
+    if (!this.bindingsByAction.has(binding.action)) {
+      this.bindingsByAction.set(binding.action, new Set());
+    }
+    this.bindingsByAction.get(binding.action)!.add(key);
+
+    this.emit("change", { type: "add", binding });
   }
 
   /**
-   * Unregister a binding
+   * Unregister a keybinding by ID
    */
-  unregister(key: string, modifiers: KeyModifier[]): boolean {
-    const keyStr = bindingKey(key, modifiers);
-    const idx = this.bindings.findIndex((b) => bindingKey(b.key, b.modifiers) === keyStr);
+  unregister(bindingId: string): void;
+  /**
+   * Unregister a keybinding by key and modifiers
+   */
+  unregister(key: string, modifiers: KeyModifier[]): boolean;
+  unregister(bindingIdOrKey: string, modifiers?: KeyModifier[]): void | boolean {
+    // Determine which overload
+    if (modifiers !== undefined) {
+      // Called as unregister(key, modifiers)
+      const bindingKey =
+        modifiers.length > 0
+          ? `${modifiers.sort().join("+")}+${bindingIdOrKey.toLowerCase()}`
+          : bindingIdOrKey.toLowerCase();
 
-    if (idx >= 0) {
-      const removed = this.bindings.splice(idx, 1)[0];
-
-      // Remove from action index
-      const actionBindings = this.byAction.get(removed.action);
-      if (actionBindings) {
-        const actionIdx = actionBindings.findIndex((b) => b === removed);
-        if (actionIdx >= 0) {
-          actionBindings.splice(actionIdx, 1);
+      const binding = this.bindings.get(bindingKey);
+      if (binding) {
+        this.bindings.delete(bindingKey);
+        const actionBindings = this.bindingsByAction.get(binding.action);
+        if (actionBindings) {
+          actionBindings.delete(bindingKey);
+          if (actionBindings.size === 0) {
+            this.bindingsByAction.delete(binding.action);
+          }
         }
+        this.emit("change", { type: "remove", binding });
+        return true;
       }
-
-      return true;
+      return false;
     }
 
-    return false;
+    // Called as unregister(bindingId)
+    const binding = this.findById(bindingIdOrKey);
+    if (!binding) return;
+
+    const key = this.bindingToKey(binding);
+    this.bindings.delete(key);
+
+    const actionBindings = this.bindingsByAction.get(binding.action);
+    if (actionBindings) {
+      actionBindings.delete(key);
+      if (actionBindings.size === 0) {
+        this.bindingsByAction.delete(binding.action);
+      }
+    }
+
+    this.emit("change", { type: "remove", binding });
   }
 
   /**
-   * Clear all bindings
+   * Disable a binding by ID
    */
-  clear(): void {
-    this.bindings = [];
-    this.byAction.clear();
-    this.customBindings = [];
-    this.disabledActions.clear();
+  disable(bindingId: string): void {
+    this.disabledBindings.add(bindingId);
+  }
+
+  /**
+   * Enable a binding by ID
+   */
+  enable(bindingId: string): void {
+    this.disabledBindings.delete(bindingId);
+  }
+
+  /**
+   * Check if a binding is disabled
+   */
+  isDisabled(bindingId: string): boolean {
+    return this.disabledBindings.has(bindingId);
   }
 
   // ============================================================================
-  // MATCHING
+  // LOOKUP
   // ============================================================================
 
   /**
-   * Check if input data matches a binding and return the action
-   */
-  match(data: string): { action: KeyAction; binding: CompiledBinding } | null {
-    // Skip if no bindings
-    if (this.bindings.length === 0) return null;
-
-    // Find matching binding
-    for (const binding of this.bindings) {
-      // Check context
-      if (binding.context !== "always" && binding.context !== this.currentContext) {
-        continue;
-      }
-
-      // Check if action is disabled
-      if (this.disabledActions.has(binding.action)) {
-        continue;
-      }
-
-      // Match key
-      if (this.matchesBinding(data, binding)) {
-        return { action: binding.action, binding };
-      }
-    }
-
-    return null;
-  }
-
-  /**
-   * Check if input matches a specific binding
-   */
-  matchesBinding(data: string, binding: CompiledBinding): boolean {
-    const keyCode = binding.keyCode;
-
-    // Handle modifier combinations
-    if (binding.modifiers.length === 0) {
-      return matchesKey(data, keyCode as any);
-    }
-
-    // Build modifier key
-    if (binding.modifiers.includes("ctrl")) {
-      if (binding.modifiers.includes("shift")) {
-        return matchesKey(data, Key.ctrlShift(keyCode as any));
-      }
-      if (binding.modifiers.includes("alt")) {
-        return matchesKey(data, Key.ctrlAlt(keyCode as any));
-      }
-      return matchesKey(data, Key.ctrl(keyCode as any));
-    }
-
-    if (binding.modifiers.includes("alt")) {
-      if (binding.modifiers.includes("shift")) {
-        return matchesKey(data, Key.altShift(keyCode as any));
-      }
-      return matchesKey(data, Key.alt(keyCode as any));
-    }
-
-    if (binding.modifiers.includes("shift")) {
-      return matchesKey(data, Key.shift(keyCode as any));
-    }
-
-    if (binding.modifiers.includes("meta")) {
-      // Meta/Command key - platform dependent
-      return matchesKey(data, Key.meta(keyCode as any));
-    }
-
-    return matchesKey(data, keyCode as any);
-  }
-
-  /**
-   * Check if data matches a specific action
+   * Check if raw input matches an action
    */
   matches(data: string, action: KeyAction): boolean {
-    const result = this.match(data);
-    return result?.action === action;
+    const binding = this.getBinding(data);
+    return binding?.action === action;
+  }
+
+  /**
+   * Match raw input and return the binding
+   */
+  match(data: string): KeyBinding | undefined {
+    return this.getBinding(data);
+  }
+
+  /**
+   * Get binding for raw input data
+   */
+  getBinding(data: string): KeyBinding | undefined {
+    const event = this.parser.parse(data);
+    const key = this.parser.toBindingKey(event);
+
+    // Look up by key
+    let binding = this.bindings.get(key);
+
+    if (!binding) {
+      return undefined;
+    }
+
+    // Check if disabled
+    if (this.disabledBindings.has(binding.id)) {
+      return undefined;
+    }
+
+    // Check if enabled
+    if (binding.enabled === false) {
+      return undefined;
+    }
+
+    // Check context
+    if (
+      binding.context &&
+      binding.context !== "global" &&
+      binding.context !== this.currentContext
+    ) {
+      // Try to find a global binding for this key
+      const allBindings = this.getByKey(key);
+      const globalBinding = allBindings.find(
+        (b) => !b.context || b.context === "global" || b.context === this.currentContext,
+      );
+
+      if (
+        globalBinding &&
+        !this.disabledBindings.has(globalBinding.id) &&
+        globalBinding.enabled !== false
+      ) {
+        return globalBinding;
+      }
+
+      return undefined;
+    }
+
+    return binding;
   }
 
   /**
    * Get all bindings for an action
    */
-  getBindingsForAction(action: KeyAction): CompiledBinding[] {
-    return this.byAction.get(action) || [];
-  }
+  getByAction(action: KeyAction): KeyBinding[] {
+    const keys = this.bindingsByAction.get(action);
+    if (!keys) return [];
 
-  // ============================================================================
-  // DISPATCHING
-  // ============================================================================
-
-  /**
-   * Process input and dispatch to handlers
-   */
-  dispatch(data: string): boolean {
-    const match = this.match(data);
-    if (!match) return false;
-
-    const event: KeybindEvent = {
-      data,
-      key: match.binding.key,
-      modifiers: match.binding.modifiers,
-      action: match.action,
-      binding: match.binding,
-      context: this.currentContext,
-      handled: false,
-      stopPropagation: () => {
-        event.handled = true;
-      },
-    };
-
-    // Call global handlers first
-    for (const handler of this.globalHandlers) {
-      const result = handler(event);
-      if (result === true || event.handled) {
-        return true;
-      }
-    }
-
-    // Call action-specific handlers
-    const handlers = this.handlers.get(match.action);
-    if (handlers) {
-      for (const handler of handlers) {
-        const result = handler(event);
-        if (result === true || event.handled) {
-          return true;
-        }
-      }
-    }
-
-    return false;
+    return Array.from(keys)
+      .map((k) => this.bindings.get(k))
+      .filter((b): b is KeyBinding => b !== undefined);
   }
 
   /**
-   * Register a handler for an action
+   * Get all bindings for a key (regardless of context)
    */
-  on(action: KeyAction, handler: KeybindHandler): () => void {
-    if (!this.handlers.has(action)) {
-      this.handlers.set(action, new Set());
-    }
-    this.handlers.get(action)!.add(handler);
-
-    // Return unsubscribe function
-    return () => {
-      this.handlers.get(action)?.delete(handler);
-    };
+  getByKey(key: string): KeyBinding[] {
+    return Array.from(this.bindings.values()).filter((b) => this.bindingToKey(b) === key);
   }
 
   /**
-   * Register a global handler (called for all actions)
+   * Find binding by ID
    */
-  onGlobal(handler: KeybindHandler): () => void {
-    this.globalHandlers.add(handler);
-    return () => {
-      this.globalHandlers.delete(handler);
-    };
+  findById(id: string): KeyBinding | undefined {
+    return Array.from(this.bindings.values()).find((b) => b.id === id);
+  }
+
+  /**
+   * List all bindings
+   */
+  list(options?: { includeDisabled?: boolean }): KeyBinding[] {
+    return Array.from(this.bindings.values())
+      .filter((b) => options?.includeDisabled || !this.disabledBindings.has(b.id))
+      .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
+  }
+
+  /**
+   * Get all bindings (alias for list)
+   */
+  getAll(options?: { includeDisabled?: boolean }): KeyBinding[] {
+    return this.list(options);
   }
 
   // ============================================================================
@@ -351,15 +369,148 @@ export class KeybindingManager {
   /**
    * Set current context
    */
-  setContext(context: "input" | "output" | "autocomplete"): void {
+  setContext(context: KeybindContext): void {
     this.currentContext = context;
   }
 
   /**
    * Get current context
    */
-  getContext(): "input" | "output" | "autocomplete" {
+  getContext(): KeybindContext {
     return this.currentContext;
+  }
+
+  // ============================================================================
+  // PROFILES
+  // ============================================================================
+
+  /**
+   * Get available profiles
+   */
+  getProfiles(): string[] {
+    return [...Object.keys(this.builtinProfiles), ...Object.keys(this.customProfiles)];
+  }
+
+  /**
+   * List profiles (alias for getProfiles)
+   */
+  listProfiles(): string[] {
+    return this.getProfiles();
+  }
+
+  /**
+   * Get current profile name
+   */
+  getActiveProfile(): string {
+    return this.activeProfile;
+  }
+
+  /**
+   * Check if profile exists
+   */
+  hasProfile(name: string): boolean {
+    return name in this.builtinProfiles || name in this.customProfiles;
+  }
+
+  /**
+   * Add custom profile
+   */
+  addProfile(profile: KeybindProfile): void {
+    this.customProfiles[profile.name] = profile;
+  }
+
+  /**
+   * Remove custom profile
+   */
+  removeProfile(name: string): boolean {
+    if (name in this.customProfiles) {
+      delete this.customProfiles[name];
+      return true;
+    }
+    return false;
+  }
+
+  // ============================================================================
+  // VALIDATION
+  // ============================================================================
+
+  /**
+   * Validate a binding
+   */
+  private validateBinding(binding: KeyBinding): void {
+    if (!binding.id) {
+      throw new Error("Binding must have an id");
+    }
+    if (!binding.key) {
+      throw new Error("Binding must have a key");
+    }
+    if (!binding.action) {
+      throw new Error("Binding must have an action");
+    }
+  }
+
+  /**
+   * Find conflicts with a binding
+   */
+  private findConflicts(binding: KeyBinding): KeyBinding[] {
+    const conflicts: KeyBinding[] = [];
+    const bindingKey = this.bindingToKey(binding);
+
+    for (const existing of Array.from(this.bindings.values())) {
+      // Same key + modifiers
+      if (this.bindingToKey(existing) === bindingKey) {
+        // Same context or both global
+        if (
+          !existing.context ||
+          !binding.context ||
+          existing.context === binding.context ||
+          existing.context === "global" ||
+          binding.context === "global"
+        ) {
+          // Different ID = conflict
+          if (existing.id !== binding.id) {
+            conflicts.push(existing);
+          }
+        }
+      }
+    }
+
+    return conflicts;
+  }
+
+  /**
+   * Find all conflicts in current bindings
+   */
+  findAllConflicts(): KeybindConflict[] {
+    const conflicts: KeybindConflict[] = [];
+    const bindings = Array.from(this.bindings.values());
+
+    for (let i = 0; i < bindings.length; i++) {
+      for (let j = i + 1; j < bindings.length; j++) {
+        const a = bindings[i];
+        const b = bindings[j];
+
+        // Same key
+        if (this.bindingToKey(a) === this.bindingToKey(b)) {
+          // Same context or overlapping
+          if (
+            !a.context ||
+            !b.context ||
+            a.context === b.context ||
+            a.context === "global" ||
+            b.context === "global"
+          ) {
+            conflicts.push({
+              binding1: a,
+              binding2: b,
+              reason: "same-keys",
+            });
+          }
+        }
+      }
+    }
+
+    return conflicts;
   }
 
   // ============================================================================
@@ -367,125 +518,107 @@ export class KeybindingManager {
   // ============================================================================
 
   /**
-   * Get all bindings
+   * Convert binding to lookup key
    */
-  getAll(): CompiledBinding[] {
-    return [...this.bindings];
-  }
+  private bindingToKey(binding: KeyBinding): string {
+    const mods = binding.modifiers
+      .filter((m) => m !== "none")
+      .sort((a, b) => (MODIFIER_ORDER[a] ?? 99) - (MODIFIER_ORDER[b] ?? 99));
 
-  /**
-   * Get active profile name
-   */
-  getActiveProfile(): string {
-    return this.activeProfile;
-  }
-
-  /**
-   * List available profiles
-   */
-  listProfiles(): string[] {
-    return Object.keys(PROFILES);
-  }
-
-  /**
-   * Get action description
-   */
-  getActionDescription(action: KeyAction): string {
-    return ACTION_DESCRIPTIONS[action] || action;
-  }
-
-  /**
-   * Format bindings for display
-   */
-  formatBindings(bindings?: CompiledBinding[]): string[] {
-    const list = bindings || this.bindings;
-    return list.map((b) => `${formatBinding(b)} → ${b.description}`);
+    const key = binding.key.toLowerCase();
+    return mods.length > 0 ? `${mods.join("+")}+${key}` : key;
   }
 
   /**
    * Export current configuration
    */
   export(): KeybindConfig {
+    const customBindings: Record<string, KeyBinding> = {};
+
+    for (const binding of Array.from(this.bindings.values())) {
+      // Only export non-builtin bindings as custom
+      if (!this.isBuiltin(binding)) {
+        customBindings[binding.id] = binding;
+      }
+    }
+
     return {
       activeProfile: this.activeProfile,
-      customBindings: this.customBindings,
-      disabledActions: Array.from(this.disabledActions),
+      customBindings,
+      disabledBindings: Array.from(this.disabledBindings),
+      profiles: {
+        ...this.builtinProfiles,
+        ...this.customProfiles,
+      },
     };
   }
 
   /**
-   * Enable/disable an action
+   * Check if binding is built-in
    */
-  setActionEnabled(action: KeyAction, enabled: boolean): void {
-    if (enabled) {
-      this.disabledActions.delete(action);
-    } else {
-      this.disabledActions.add(action);
+  private isBuiltin(binding: KeyBinding): boolean {
+    for (const profile of Object.values(this.builtinProfiles)) {
+      if (profile.bindings.some((b) => b.id === binding.id)) {
+        return true;
+      }
     }
-  }
-
-  // ============================================================================
-  // PRIVATE
-  // ============================================================================
-
-  /**
-   * Compile a binding for fast matching
-   */
-  private compile(binding: KeyBinding): CompiledBinding {
-    return {
-      ...binding,
-      keyCode: this.normalizeKey(binding.key),
-      priority: calculatePriority(binding),
-    };
+    return false;
   }
 
   /**
-   * Normalize key name to pi-tui format
+   * Get binding count
    */
-  private normalizeKey(key: string): string {
-    const normalized = key.toLowerCase();
-
-    // Map common names
-    const keyMap: Record<string, string> = {
-      esc: "escape",
-      return: "enter",
-      space: "space",
-      bksp: "backspace",
-      del: "delete",
-      pgup: "pageup",
-      pgdn: "pagedown",
-    };
-
-    return keyMap[normalized] || normalized;
+  getCount(): number {
+    return this.bindings.size;
   }
 
   /**
-   * Sort bindings by priority (most specific first)
+   * Clear all bindings
    */
-  private sortBindings(): void {
-    this.bindings.sort((a, b) => b.priority - a.priority);
+  clear(): void {
+    this.bindings.clear();
+    this.bindingsByAction.clear();
+    this.disabledBindings.clear();
+    this.emit("change", { type: "update" });
+  }
+
+  /**
+   * Check if manager has any bindings
+   */
+  isEmpty(): boolean {
+    return this.bindings.size === 0;
   }
 }
 
 // ============================================================================
-// SINGLETON INSTANCE
+// SINGLETON MANAGEMENT
 // ============================================================================
 
-let globalManager: KeybindingManager | null = null;
+let managerInstance: KeybindingManager | null = null;
 
 /**
- * Get the global keybinding manager
+ * Get the singleton keybinding manager instance
  */
-export function getKeybindManager(): KeybindingManager {
-  if (!globalManager) {
-    globalManager = new KeybindingManager();
+export function getKeybindingManager(config?: Partial<KeybindConfig>): KeybindingManager {
+  if (!managerInstance) {
+    managerInstance = new KeybindingManager(config);
   }
-  return globalManager;
+  return managerInstance;
 }
 
 /**
- * Reset the global manager (for testing)
+ * Reset the singleton instance (for testing)
  */
-export function resetKeybindManager(): void {
-  globalManager = null;
+export function resetKeybindingManager(): void {
+  if (managerInstance) {
+    managerInstance.removeAllListeners();
+    managerInstance = null;
+  }
+}
+
+/**
+ * Create a new manager instance (not singleton)
+ */
+export function createKeybindingManager(config?: Partial<KeybindConfig>): KeybindingManager {
+  return new KeybindingManager(config);
 }

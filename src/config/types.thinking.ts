@@ -190,18 +190,3 @@ export const PROVIDER_THINKING_CONFIGS: Record<string, ProviderThinkingConfig> =
     defaultMode: "adaptive", // Changed to adaptive
   },
 };
-
-// ============================================================================
-// EXPORTS
-// ============================================================================
-
-export {
-  ThinkingMode,
-  ThinkingConfig,
-  ProviderThinkingConfig,
-  calculateThinkingBudget,
-  getThinkingModeLabel,
-  getThinkingModeDescription,
-  DEFAULT_THINKING_CONFIG,
-  PROVIDER_THINKING_CONFIGS,
-};

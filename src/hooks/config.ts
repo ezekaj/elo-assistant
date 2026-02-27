@@ -188,3 +188,32 @@ export function shouldIncludeHook(_opts: {
   // Default: include all hooks
   return true;
 }
+
+/**
+ * Resolve hook configuration path
+ */
+export function resolveHookConfig(source: "user" | "project" | "local"): string {
+  return getConfigPath(source);
+}
+
+/**
+ * Resolve configuration path for hooks
+ */
+export function resolveConfigPath(source: "user" | "project" | "local"): string {
+  return getConfigPath(source);
+}
+
+/**
+ * Check if a configuration path is truthy/enabled
+ */
+export function isConfigPathTruthy(path: string): boolean {
+  return path.length > 0;
+}
+
+/**
+ * Check if hooks have binary content
+ */
+export function hasBinary(_config: any): boolean {
+  // Default: no binary content in hooks
+  return false;
+}

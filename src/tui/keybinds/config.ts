@@ -8,8 +8,14 @@ import { existsSync } from "fs";
 import { readFile, writeFile } from "fs/promises";
 import { homedir } from "os";
 import { join } from "path";
-import type { KeybindConfig, KeyBinding, KeyAction } from "./types.js";
-import { KeybindingManager, getKeybindManager } from "./manager.js";
+import type {
+  KeybindConfig,
+  KeyBinding,
+  KeyAction,
+  KeybindProfile,
+  KeybindContext,
+} from "./types.js";
+import { KeybindingManager, getKeybindingManager } from "./manager.js";
 import { parseBinding } from "./types.js";
 
 // ============================================================================
@@ -30,8 +36,9 @@ export function getKeybindConfigPath(baseDir?: string): string {
 
 export const DEFAULT_KEYBIND_CONFIG: KeybindConfig = {
   activeProfile: "default",
-  customBindings: [],
-  disabledActions: [],
+  customBindings: {},
+  disabledBindings: [],
+  profiles: {},
 };
 
 // ============================================================================
@@ -65,7 +72,7 @@ export async function loadKeybindConfig(baseDir?: string): Promise<KeybindConfig
  */
 export async function loadKeybinds(manager?: KeybindingManager, baseDir?: string): Promise<void> {
   const config = await loadKeybindConfig(baseDir);
-  const mgr = manager || getKeybindManager();
+  const mgr = manager || getKeybindingManager();
   mgr.loadConfig(config);
 }
 
@@ -87,7 +94,7 @@ export async function saveKeybindConfig(config: KeybindConfig, baseDir?: string)
  * Save current manager state to config
  */
 export async function saveKeybinds(manager?: KeybindingManager, baseDir?: string): Promise<void> {
-  const mgr = manager || getKeybindManager();
+  const mgr = manager || getKeybindingManager();
   const config = mgr.export();
   await saveKeybindConfig(config, baseDir);
 }
@@ -107,18 +114,42 @@ function normalizeConfig(raw: any): KeybindConfig {
     config.activeProfile = raw.activeProfile;
   }
 
-  // Custom bindings
+  // Custom bindings - support both array and object formats
   if (Array.isArray(raw.customBindings)) {
-    config.customBindings = raw.customBindings
-      .map(normalizeBinding)
-      .filter((b): b is KeyBinding => b !== null);
+    // Convert array to object
+    const bindings: Record<string, KeyBinding> = {};
+    for (const b of raw.customBindings) {
+      const normalized = normalizeBinding(b);
+      if (normalized) {
+        bindings[normalized.id] = normalized;
+      }
+    }
+    config.customBindings = bindings;
+  } else if (typeof raw.customBindings === "object") {
+    // Already an object
+    const bindings: Record<string, KeyBinding> = {};
+    for (const [id, b] of Object.entries(raw.customBindings)) {
+      const normalized = normalizeBinding(b);
+      if (normalized) {
+        bindings[id] = normalized;
+      }
+    }
+    config.customBindings = bindings;
   }
 
-  // Disabled actions
-  if (Array.isArray(raw.disabledActions)) {
-    config.disabledActions = raw.disabledActions.filter(
-      (a): a is KeyAction => typeof a === "string",
+  // Disabled bindings
+  if (Array.isArray(raw.disabledBindings)) {
+    config.disabledBindings = raw.disabledBindings.filter(
+      (s): s is string => typeof s === "string",
     );
+  } else if (Array.isArray(raw.disabledActions)) {
+    // Legacy field name
+    config.disabledBindings = raw.disabledActions.filter((s): s is string => typeof s === "string");
+  }
+
+  // Profiles
+  if (typeof raw.profiles === "object") {
+    config.profiles = raw.profiles;
   }
 
   return config;
@@ -150,7 +181,7 @@ function normalizeBinding(raw: any): KeyBinding | null {
 
   // Merge modifiers
   if (Array.isArray(raw.modifiers)) {
-    const validModifiers = ["ctrl", "alt", "shift", "meta"];
+    const validModifiers = ["ctrl", "alt", "shift", "meta", "none"];
     for (const m of raw.modifiers) {
       if (validModifiers.includes(m) && !modifiers.includes(m)) {
         modifiers.push(m);
@@ -161,20 +192,38 @@ function normalizeBinding(raw: any): KeyBinding | null {
   // Action
   if (typeof raw.action !== "string") return null;
 
+  // ID
+  const id = typeof raw.id === "string" ? raw.id : `${raw.action}:${key}`;
+
   // Description
   const description = typeof raw.description === "string" ? raw.description : raw.action;
 
-  // Context
-  const validContexts = ["input", "output", "autocomplete", "always"];
-  const context = validContexts.includes(raw.context) ? raw.context : undefined;
+  // Context - normalize 'always' to 'global'
+  const validContexts: KeybindContext[] = [
+    "global",
+    "input",
+    "autocomplete",
+    "vim-normal",
+    "vim-insert",
+    "vim-visual",
+    "browser",
+  ];
+  let context: KeybindContext | undefined;
+  if (raw.context === "always") {
+    context = "global";
+  } else if (validContexts.includes(raw.context)) {
+    context = raw.context;
+  }
 
   return {
+    id,
     key,
     modifiers: modifiers as any,
     action: raw.action as KeyAction,
     description,
     context,
-    protected: Boolean(raw.protected),
+    enabled: raw.enabled !== false,
+    priority: typeof raw.priority === "number" ? raw.priority : undefined,
   };
 }
 
@@ -253,43 +302,49 @@ export const QUICK_SETUPS = {
    * Disable history navigation with arrow keys (use Ctrl+P/N instead)
    */
   noArrowHistory: (): Partial<KeybindConfig> => ({
-    customBindings: [
-      {
+    customBindings: {
+      "history-up-override": {
+        id: "history-up-override",
         key: "up",
         modifiers: [],
-        action: "scroll-up",
-        description: "Scroll up",
-        context: "always",
+        action: "refresh",
+        description: "Refresh (arrow up disabled for history)",
+        context: "global",
       },
-      {
+      "history-down-override": {
+        id: "history-down-override",
         key: "down",
         modifiers: [],
-        action: "scroll-down",
-        description: "Scroll down",
-        context: "always",
+        action: "refresh",
+        description: "Refresh (arrow down disabled for history)",
+        context: "global",
       },
-    ],
+    },
+    disabledBindings: ["history-up", "history-down"],
   }),
 
   /**
    * Use Ctrl+Enter to send (Enter for newline)
+   * Note: This would require extending the editor to support multi-line input
    */
   ctrlEnterToSend: (): Partial<KeybindConfig> => ({
-    customBindings: [
-      {
+    customBindings: {
+      "enter-newline": {
+        id: "enter-newline",
         key: "enter",
         modifiers: [],
-        action: "submit-alt",
-        description: "Newline",
-        context: "input",
-      },
-      {
-        key: "enter",
-        modifiers: ["ctrl"],
         action: "submit",
         description: "Send message",
         context: "input",
       },
-    ],
+      "ctrl-enter-send": {
+        id: "ctrl-enter-send",
+        key: "enter",
+        modifiers: ["ctrl"],
+        action: "submit",
+        description: "Send message (alternative)",
+        context: "input",
+      },
+    },
   }),
 };

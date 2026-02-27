@@ -223,6 +223,29 @@ export function getSlashCommands(options: SlashCommandOptions = {}): SlashComman
       name: "vim-status",
       description: "Show detailed Vim mode status",
     },
+    // Keybind commands
+    {
+      name: "keybind",
+      description: "Manage keybindings",
+      getArgumentCompletions: (prefix) => [
+        { value: "list", label: "Show all keybindings" },
+        { value: "profile", label: "Manage profiles" },
+        { value: "set", label: "Bind a key to an action" },
+        { value: "unset", label: "Remove a keybinding" },
+        { value: "reset", label: "Reset to defaults" },
+        { value: "search", label: "Search bindings" },
+        { value: "save", label: "Save to config" },
+        { value: "help", label: "Show keybind help" },
+      ],
+    },
+    {
+      name: "keybinds",
+      description: "Alias for /keybind",
+    },
+    {
+      name: "keymap",
+      description: "Alias for /keybind",
+    },
     // File History commands
     {
       name: "checkpoint",
@@ -340,6 +363,12 @@ export function helpText(options: SlashCommandOptions = {}): string {
     "/enter-plan-mode     # Read-only, no execution",
     "/exit-plan-mode      # Return to default mode",
     "/plan-status         # Show current mode",
+    "",
+    "# Keybindings:",
+    "/keybind             # Show all keybindings",
+    "/keybind profile <name>  # Switch keybinding profile",
+    "/keybind set <key> <action>  # Bind a key",
+    "/keybind search <query>  # Search bindings",
     "",
     "# Other:",
     "/hooks",

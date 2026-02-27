@@ -305,6 +305,12 @@ export function createCommandHandlers(context: CommandHandlerContext) {
       "teleport-complete",
       "plugins-update",
       "plugins-update-all",
+      "keybind",
+      "keybinds",
+      "keymap",
+      "keys",
+      "vim",
+      "vim-status",
     ];
 
     // If name contains path separators or looks like a path, send as message
@@ -787,6 +793,16 @@ export function createCommandHandlers(context: CommandHandlerContext) {
           }
         }
         updateFooter();
+        break;
+      }
+
+      case "keybind":
+      case "keybinds":
+      case "keymap":
+      case "keys": {
+        const { handleKeybindCommand } = await import("./keybinds/commands.js");
+        const cmdArgs = parsed.args ? parsed.args.split(/\s+/) : [];
+        await handleKeybindCommand({ chatLog, args: cmdArgs });
         break;
       }
 

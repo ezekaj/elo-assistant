@@ -570,7 +570,7 @@ export class PredictiveEngine {
     // Publish prediction event if mesh available
     if (this.mesh && limited.length > 0) {
       this.mesh.emit({
-        type: EventTypes.USER_MESSAGE_RECEIVED,
+        type: EventTypes.USER_MESSAGE,
         source: "predictive-engine",
         data: {
           type: "predictions_generated",

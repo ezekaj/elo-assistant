@@ -255,24 +255,3 @@ export function validateTTLOrdering(ttls: CacheTTL[]): boolean {
 
   return true;
 }
-
-// ============================================================================
-// EXPORTS
-// ============================================================================
-
-export {
-  CacheTTL,
-  CacheControl,
-  CacheBreakpoint,
-  CacheMetrics,
-  APIUsage,
-  CachePricing,
-  ProviderCacheConfig,
-  PROVIDER_CACHE_CONFIGS,
-  getProviderCacheConfig,
-  isCachingSupported,
-  getCacheBetaHeader,
-  calculateCacheHitRate,
-  calculateCacheSavings,
-  validateTTLOrdering,
-};

@@ -8,7 +8,22 @@
  * - Exactly-once semantics
  */
 
-import { Kafka, Producer, Consumer, logLevel } from "kafkajs";
+// Dynamic import for optional kafkajs dependency
+let Kafka: any;
+let Producer: any;
+let Consumer: any;
+let logLevel: any;
+
+async function loadKafka() {
+  if (!Kafka) {
+    const kafkajs = await import("kafkajs");
+    Kafka = kafkajs.Kafka;
+    Producer = kafkajs.Producer;
+    Consumer = kafkajs.Consumer;
+    logLevel = kafkajs.logLevel;
+  }
+  return { Kafka, Producer, Consumer, logLevel };
+}
 
 export interface AgentEvent<T = unknown> {
   id: string;

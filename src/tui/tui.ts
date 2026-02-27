@@ -24,9 +24,16 @@ import {
 } from "../routing/session-key.js";
 import { initializeBrowserForTUI, cleanupBrowserForTUI } from "./browser-integration.js";
 import { getSlashCommands } from "./commands.js";
+import { helpText } from "./commands.js";
 import { ChatLog } from "./components/chat-log.js";
 import { CustomEditor } from "./components/custom-editor.js";
 import { GatewayChatClient } from "./gateway-chat.js";
+import {
+  type ActionContext,
+  buildActionContext,
+  getKeybindingManager,
+  getClipboardAdapter,
+} from "./keybinds/index.js";
 import { editorTheme, theme } from "./theme/theme.js";
 import { createCommandHandlers } from "./tui-command-handlers.js";
 import { createEventHandlers } from "./tui-event-handlers.js";
@@ -35,6 +42,7 @@ import { createLocalShellRunner } from "./tui-local-shell.js";
 import { createOverlayHandlers } from "./tui-overlays.js";
 import { createSessionActions } from "./tui-session-actions.js";
 import { buildWaitingStatusMessage, defaultWaitingPhrases } from "./tui-waiting.js";
+import { isVimModeEnabled, getCurrentVimMode, setVimModeEnabled } from "./vim-mode/vim-state.js";
 
 export { resolveFinalAssistantText } from "./tui-formatters.js";
 export type { TuiOptions } from "./tui-types.js";
@@ -682,6 +690,190 @@ export async function runTui(opts: TuiOptions) {
     showThinking = !showThinking;
     void loadHistory();
   };
+
+  // ==========================================================================
+  // KEYBINDING ACTION CONTEXT
+  // ==========================================================================
+  // Wire up the action-based keybinding system
+  const keybindManager = getKeybindingManager();
+  const clipboardAdapter = getClipboardAdapter();
+
+  // Helper to get current verbose/reasoning levels
+  const getVerboseLevel = () => sessionInfo.verboseLevel ?? "off";
+  const getReasoningLevel = () => sessionInfo.reasoningLevel ?? "off";
+
+  editor.setActionContext({
+    // Editor/input state
+    editor: {
+      getText: () => editor.getText(),
+      setText: (text: string) => editor.setText(text),
+      clear: () => editor.setText(""),
+      getCursor: () => {
+        // Convert Editor's {line, col} to character offset
+        const lines = editor.getLines();
+        const cursor = editor.getCursor();
+        let offset = 0;
+        for (let i = 0; i < cursor.line; i++) {
+          offset += (lines[i]?.length ?? 0) + 1; // +1 for newline
+        }
+        return offset + cursor.col;
+      },
+      setCursor: (pos: number) => {
+        // Convert character offset to {line, col}
+        // Note: pi-tui Editor doesn't expose setCursor, so this is best-effort
+        const lines = editor.getLines();
+        let currentOffset = 0;
+        for (let i = 0; i < lines.length; i++) {
+          const lineLen = lines[i]?.length ?? 0;
+          if (pos <= currentOffset + lineLen) {
+            // Found the line; col is the remainder
+            // Can't actually move cursor - Editor limitation
+            break;
+          }
+          currentOffset += lineLen + 1;
+        }
+      },
+      insert: (text: string) => editor.insertTextAtCursor(text),
+      delete: (start: number, end: number) => {
+        const text = editor.getText();
+        editor.setText(text.slice(0, start) + text.slice(end));
+      },
+    },
+
+    // Command history - Editor has internal history, we can't access it
+    history: {
+      prev: () => undefined,
+      next: () => undefined,
+      search: () => undefined,
+    },
+
+    // Autocomplete state
+    autocomplete: {
+      isActive: () => editor.isShowingAutocomplete?.() ?? false,
+      next: () => {
+        /* Tab handled by Editor */
+      },
+      prev: () => {
+        /* Shift+Tab handled by Editor */
+      },
+      cancel: () => {
+        /* Escape handled by Editor */
+      },
+      accept: () => {
+        /* Enter/Tab handled by Editor */
+      },
+      trigger: () => {
+        /* Triggered by typing */
+      },
+    },
+
+    // Session management
+    sessions: {
+      new: () => void setSession(""),
+      next: () => void openSessionSelector(),
+      prev: () => void openSessionSelector(),
+      switch: (key?: string) => void (key ? setSession(key) : openSessionSelector()),
+    },
+
+    // Vim mode
+    vim: {
+      isEnabled: () => isVimModeEnabled(),
+      enable: () => setVimModeEnabled(true),
+      disable: () => setVimModeEnabled(false),
+      toggle: () => setVimModeEnabled(!isVimModeEnabled()),
+      getMode: () => {
+        const mode = getCurrentVimMode();
+        return mode === "NORMAL" ? "normal" : mode === "VISUAL" ? "visual" : "insert";
+      },
+      setMode: (mode) => {
+        keybindManager.setContext(
+          mode === "normal" ? "vim-normal" : mode === "visual" ? "vim-visual" : "vim-insert",
+        );
+      },
+    },
+
+    // TUI control
+    tui: {
+      clear: () => chatLog.clear(),
+      refresh: () => tui.requestRender(),
+      toggleVerbose: async () => {
+        const current = getVerboseLevel();
+        const newLevel = current === "off" ? "on" : "off";
+        try {
+          await client.patchSession({ key: state.currentSessionKey, verboseLevel: newLevel });
+          await refreshSessionInfo();
+          chatLog.addSystem(`Verbose mode: ${newLevel.toUpperCase()}`);
+          tui.requestRender();
+        } catch (err) {
+          chatLog.addSystem(`Failed to toggle verbose: ${String(err)}`);
+        }
+      },
+      toggleReasoning: async () => {
+        const current = getReasoningLevel();
+        const newLevel = current === "off" ? "on" : "off";
+        try {
+          await client.patchSession({ key: state.currentSessionKey, reasoningLevel: newLevel });
+          await refreshSessionInfo();
+          chatLog.addSystem(`Reasoning mode: ${newLevel.toUpperCase()}`);
+          tui.requestRender();
+        } catch (err) {
+          chatLog.addSystem(`Failed to toggle reasoning: ${String(err)}`);
+        }
+      },
+      toggleHelp: () => {
+        const help = helpText({
+          supportsExternalEditor: true,
+          hasImageSupport: true,
+          supportsPaste: true,
+        });
+        // Split help into lines and add each as system message
+        help.split("\n").forEach((line) => {
+          if (line.trim()) chatLog.addSystem(line);
+        });
+        tui.requestRender();
+      },
+      quit: () => {
+        client.stop();
+        tui.stop();
+        process.exit(0);
+      },
+      setContext: (ctx) => keybindManager.setContext(ctx),
+    },
+
+    // Clipboard
+    clipboard: {
+      copy: () => {
+        const text = editor.getText();
+        clipboardAdapter.copy(text);
+      },
+      paste: async () => {
+        return await clipboardAdapter.paste();
+      },
+    },
+
+    // Core actions
+    submit: () => editor.onSubmit?.(editor.getText()),
+    abort: () => void abortActive(),
+
+    // Logging
+    log: {
+      system: (msg: string) => {
+        chatLog.addSystem(msg);
+        tui.requestRender();
+      },
+      error: (msg: string) => {
+        chatLog.addSystem(`❌ ${msg}`);
+        tui.requestRender();
+      },
+    },
+  } as ActionContext);
+
+  // Sync vim context with keybinding manager
+  if (isVimModeEnabled()) {
+    keybindManager.setContext(getCurrentVimMode() === "NORMAL" ? "vim-normal" : "vim-insert");
+  } else {
+    keybindManager.setContext("input");
+  }
 
   client.onEvent = (evt) => {
     if (evt.event === "chat") {

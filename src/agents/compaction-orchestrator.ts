@@ -184,12 +184,12 @@ async function trySessionMemoryCompaction(
       return {
         success: true,
         method: "session_memory",
-        postCompactTokenCount: result.tokenCount || 0
+        postCompactTokenCount: result.result?.tokensAfter || result.result?.tokensBefore || 0
       };
     }
-    
+
     return null;
-    
+
   } catch (error) {
     log.debug("Session memory compaction error:", error);
     return null;
@@ -224,12 +224,12 @@ async function tryRegularCompaction(
       return {
         success: true,
         method: "regular",
-        postCompactTokenCount: result.tokenCount || 0
+        postCompactTokenCount: result.result?.tokensAfter || result.result?.tokensBefore || 0
       };
     }
-    
+
     return null;
-    
+
   } catch (error) {
     log.error("Regular compaction error:", error);
     return null;
@@ -244,15 +244,10 @@ async function tryRegularCompaction(
  * Count tokens in messages
  */
 function countMessagesTokens(messages: any[]): number {
-  // Use OpenClaw's existing token estimation
-  try {
-    const { estimateTokens } = await import("./compaction.js");
-    return messages.reduce((sum, msg) => sum + estimateTokens(msg), 0);
-  } catch {
-    // Fallback: rough estimate (4 chars ≈ 1 token)
-    const text = JSON.stringify(messages);
-    return Math.ceil(text.length / 4);
-  }
+  // Fallback: rough estimate (4 chars ≈ 1 token)
+  // Using sync approach to avoid async complexity
+  const text = JSON.stringify(messages);
+  return Math.ceil(text.length / 4);
 }
 
 /**

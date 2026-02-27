@@ -13,12 +13,6 @@
  * if (manager.matches(data, 'submit')) {
  *   handleSubmit();
  * }
- *
- * // Register a handler
- * manager.on('abort', (event) => {
- *   console.log('Aborted!');
- *   return true;
- * });
  * ```
  */
 
@@ -27,26 +21,55 @@ export type {
   KeyModifier,
   KeyAction,
   KeyBinding,
-  CompiledBinding,
   KeybindProfile,
   KeybindConfig,
-  KeybindEvent,
-  KeybindHandler,
+  KeybindContext,
+  ParsedKeyEvent,
+  KeybindConflict,
+  KeybindChangeEvent,
+  KeyboardLayout,
+  Platform,
 } from "./types.js";
 
-export { bindingKey, parseBinding, formatBinding, calculatePriority } from "./types.js";
+export {
+  bindingKey,
+  parseBinding,
+  formatBinding,
+  calculatePriority,
+  SPECIAL_KEYS,
+  MODIFIER_ORDER,
+  isKeyAction,
+  isKeyModifier,
+  isKeybindContext,
+  isMacOS,
+  isGermanKeyboard,
+} from "./types.js";
 
 // Defaults
 export {
   DEFAULT_BINDINGS,
-  VIM_BINDINGS,
-  EMACS_BINDINGS,
+  DEFAULT_PROFILE,
   PROFILES,
   ACTION_DESCRIPTIONS,
+  generateBindingId,
+  isValidBindingId,
+  createBinding,
 } from "./defaults.js";
 
 // Manager
-export { KeybindingManager, getKeybindManager, resetKeybindManager } from "./manager.js";
+export {
+  KeybindingManager,
+  getKeybindingManager,
+  resetKeybindingManager,
+  createKeybindingManager,
+} from "./manager.js";
+
+// Parser
+export { KeyParser, keyParser, parseKey } from "./parser.js";
+
+// Actions
+export type { ActionContext } from "./actions.js";
+export { executeAction, requiresInputContext, getActionDescription } from "./actions.js";
 
 // Config
 export {
@@ -59,3 +82,20 @@ export {
   getKeybindConfigSchema,
   QUICK_SETUPS,
 } from "./config.js";
+
+// Context (adapters and builders)
+export {
+  EditorAdapter,
+  type CursorPosition,
+  type HistoryEntry,
+  TUIAdapter,
+  type ChatLog,
+  type GatewayClient,
+  type TUIAdapterOptions,
+  ClipboardAdapter,
+  getClipboardAdapter,
+  buildActionContext,
+  createMockActionContext,
+  type VimModeState,
+  type BuildContextOptions,
+} from "./context/index.js";

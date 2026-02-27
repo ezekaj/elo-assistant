@@ -461,19 +461,3 @@ export function formatAdaptiveThinkingConfig(config: ThinkingConfig): string {
 
   return parts.join(" | ");
 }
-
-// ============================================================================
-// EXPORTS
-// ============================================================================
-
-export {
-  UniversalAdaptiveThinkingManager,
-  getUniversalAdaptiveThinkingManager,
-  resetUniversalAdaptiveThinkingManager,
-  analyzeTaskComplexity,
-  determineAdaptiveThinking,
-  formatAdaptiveThinkingConfig,
-  extractProvider,
-};
-
-export type { TaskComplexity, AdaptiveThinkingResult, TaskAnalysisOptions };

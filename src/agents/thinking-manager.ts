@@ -299,15 +299,3 @@ export function formatThinkingConfig(config: ThinkingConfig): string {
 
   return parts.join(" | ");
 }
-
-// ============================================================================
-// EXPORTS
-// ============================================================================
-
-export {
-  ThinkingManager,
-  getThinkingManager,
-  resetThinkingManager,
-  parseThinkingMode,
-  formatThinkingConfig,
-};

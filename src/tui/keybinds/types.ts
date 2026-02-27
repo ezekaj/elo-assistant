@@ -378,3 +378,134 @@ export function detectKeyboardLayout(): KeyboardLayout {
 export function isGermanKeyboard(): boolean {
   return detectKeyboardLayout() === "de";
 }
+
+// ============================================================================
+// BINDING UTILITIES
+// ============================================================================
+
+/**
+ * Create a canonical binding key string
+ * Format: "ctrl+alt+shift+key" (modifiers sorted)
+ */
+export function bindingKey(key: string, modifiers: KeyModifier[]): string {
+  const mods = modifiers
+    .filter((m) => m !== "none")
+    .sort((a, b) => (MODIFIER_ORDER[a] ?? 99) - (MODIFIER_ORDER[b] ?? 99));
+
+  const normalizedKey = key.toLowerCase();
+  return mods.length > 0 ? `${mods.join("+")}+${normalizedKey}` : normalizedKey;
+}
+
+/**
+ * Parse a binding key string into components
+ */
+export function parseBinding(str: string): { key: string; modifiers: KeyModifier[] } | null {
+  if (!str || str.length === 0) return null;
+
+  const parts = str.toLowerCase().split("+");
+
+  // Handle single key (no modifiers)
+  if (parts.length === 1) {
+    return { key: parts[0], modifiers: [] };
+  }
+
+  // Extract key (last part) and modifiers
+  const key = parts.pop()!;
+  if (!key) return null;
+
+  const modifiers: KeyModifier[] = [];
+
+  for (const part of parts) {
+    // Normalize modifier names
+    const normalized = part.trim();
+    if (normalized === "ctrl" || normalized === "control") {
+      if (!modifiers.includes("ctrl")) modifiers.push("ctrl");
+    } else if (normalized === "alt" || normalized === "option" || normalized === "meta") {
+      if (!modifiers.includes("alt")) modifiers.push("alt");
+    } else if (normalized === "shift") {
+      if (!modifiers.includes("shift")) modifiers.push("shift");
+    } else if (
+      normalized === "meta" ||
+      normalized === "cmd" ||
+      normalized === "command" ||
+      normalized === "super"
+    ) {
+      if (!modifiers.includes("meta")) modifiers.push("meta");
+    }
+    // Unknown modifier - ignore
+  }
+
+  return { key, modifiers };
+}
+
+/**
+ * Format a binding for display
+ */
+export function formatBinding(binding: KeyBinding): string {
+  const mods = binding.modifiers
+    .filter((m) => m !== "none")
+    .sort((a, b) => (MODIFIER_ORDER[a] ?? 99) - (MODIFIER_ORDER[b] ?? 99))
+    .map((m) => m.charAt(0).toUpperCase() + m.slice(1));
+
+  const keyDisplay = formatKeyDisplay(binding.key);
+
+  return mods.length > 0 ? `${mods.join("+")}+${keyDisplay}` : keyDisplay;
+}
+
+/**
+ * Format a single key for display
+ */
+function formatKeyDisplay(key: string): string {
+  const displayNames: Record<string, string> = {
+    escape: "Esc",
+    enter: "Enter",
+    backspace: "Backspace",
+    tab: "Tab",
+    space: "Space",
+    up: "↑",
+    down: "↓",
+    left: "←",
+    right: "→",
+    home: "Home",
+    end: "End",
+    pageup: "PgUp",
+    pagedown: "PgDn",
+    insert: "Ins",
+    delete: "Del",
+  };
+
+  if (displayNames[key]) {
+    return displayNames[key];
+  }
+
+  // F keys
+  if (key.match(/^f\d+$/)) {
+    return key.toUpperCase();
+  }
+
+  // Single letter/number
+  if (key.length === 1) {
+    return key.toUpperCase();
+  }
+
+  return key;
+}
+
+/**
+ * Calculate priority for a binding
+ * Higher priority = checked first
+ */
+export function calculatePriority(binding: KeyBinding): number {
+  // Base priority from binding
+  let priority = binding.priority ?? 50;
+
+  // Boost for specific context
+  if (binding.context && binding.context !== "global") {
+    priority += 10;
+  }
+
+  // Boost for modifiers (more specific = higher priority)
+  priority += binding.modifiers.filter((m) => m !== "none").length * 5;
+
+  return priority;
+}

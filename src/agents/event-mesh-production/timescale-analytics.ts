@@ -8,8 +8,22 @@
  * - PostgreSQL compatibility
  */
 
-import { Pool, PoolClient, QueryResult } from "pg";
 import type { AgentEvent } from "./redpanda";
+
+// Dynamic import for optional pg dependency
+let Pool: any;
+let PoolClient: any;
+let QueryResult: any;
+
+async function loadPg() {
+  if (!Pool) {
+    const pg = await import("pg");
+    Pool = pg.Pool;
+    PoolClient = pg.PoolClient;
+    QueryResult = pg.QueryResult;
+  }
+  return { Pool, PoolClient, QueryResult };
+}
 
 export interface TimescaleConfig {
   connectionString: string;

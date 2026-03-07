@@ -1,0 +1,31 @@
+{
+  "name": "code-evolution",
+  "version": "1.0.0",
+  "description": "Self-evolving code system for OpenClaw - analyzes behavior and improves codebase",
+  "main": "dist/cli.js",
+  "bin": {
+    "code-evolution": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/cli.js",
+    "dev": "ts-node src/cli.ts",
+    "test": "echo \"Tests via OpenClaw's test suite\""
+  },
+  "keywords": [
+    "self-evolving",
+    "code-improvement",
+    "ai",
+    "openclaw",
+    "automated-refactoring"
+  ],
+  "author": "Lorenc",
+  "license": "MIT",
+  "dependencies": {
+    "typescript": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "ts-node": "^10.9.0"
+  }
+}

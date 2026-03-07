@@ -1,0 +1,29 @@
+[package]
+name = "ripgrep-napi"
+version = "1.0.0"
+edition = "2021"
+description = "Ripgrep N-API bindings for OpenClaw"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = "2"
+napi-derive = "2"
+napi-build = "2"
+grep = "0.3"
+grep-regex = "0.3"
+grep-searcher = "0.1"
+ignore = "0.4"
+crossbeam-channel = "0.5"
+encoding_rs = "0.8"
+log = "0.4"
+
+[build-dependencies]
+napi-build = "2"
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3

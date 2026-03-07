@@ -1,0 +1,70 @@
+{
+  "647793802ced7b98502ac2fa4b7fbb9ac9245be93d2a156afebea1bd6b56adfc": {
+    "deviceId": "647793802ced7b98502ac2fa4b7fbb9ac9245be93d2a156afebea1bd6b56adfc",
+    "publicKey": "iV2KplyqG12t5QmW64BRPLtV5W9Yv-d3-TVn3C0AWb0",
+    "platform": "darwin",
+    "clientId": "cli",
+    "clientMode": "cli",
+    "role": "operator",
+    "roles": [
+      "node",
+      "operator"
+    ],
+    "scopes": [
+      "operator.admin",
+      "operator.approvals",
+      "operator.pairing"
+    ],
+    "tokens": {
+      "node": {
+        "token": "62f3218fd35e421cb1c0fda9ed1dfbd4",
+        "role": "node",
+        "scopes": [],
+        "createdAtMs": 1770239691569,
+        "lastUsedAtMs": 1771801142004
+      },
+      "operator": {
+        "token": "84233efac9f1463aa1f9d1592e4eea46",
+        "role": "operator",
+        "scopes": [
+          "operator.admin",
+          "operator.approvals",
+          "operator.pairing"
+        ],
+        "createdAtMs": 1770239698358,
+        "rotatedAtMs": 1770246270723,
+        "lastUsedAtMs": 1772903546693
+      }
+    },
+    "createdAtMs": 1770239691569,
+    "approvedAtMs": 1770246270723
+  },
+  "7d491e6da2a93894cd25923577720699854098982304082d22fa7c434a04e6e2": {
+    "deviceId": "7d491e6da2a93894cd25923577720699854098982304082d22fa7c434a04e6e2",
+    "publicKey": "RS3WYVmby56n2RWmHPmb3RmxbtTJ5d1TJ3BCCW3JU8g",
+    "displayName": "eloclaw-tui",
+    "platform": "darwin",
+    "clientId": "gateway-client",
+    "clientMode": "ui",
+    "role": "operator",
+    "roles": [
+      "operator"
+    ],
+    "scopes": [
+      "operator.admin"
+    ],
+    "tokens": {
+      "operator": {
+        "token": "b060d1e80ba24b1190858b3270f2f9bd",
+        "role": "operator",
+        "scopes": [
+          "operator.admin"
+        ],
+        "createdAtMs": 1772810608657,
+        "lastUsedAtMs": 1772904895794
+      }
+    },
+    "createdAtMs": 1772810608657,
+    "approvedAtMs": 1772810608657
+  }
+}

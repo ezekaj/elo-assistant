@@ -1,0 +1,39 @@
+{
+  "date": "2026-02-26",
+  "generatedAt": 1772150389072,
+  "totalCompactions": 1483,
+  "totalTokensSaved": 0,
+  "sessions": [
+    {
+      "sessionKey": "agent:main:main",
+      "agentId": "main",
+      "compactionCount": 1479,
+      "summary": "Answer #1"
+    },
+    {
+      "sessionKey": "2cfec892-3c7e-46f7-82dc-8829e6ddc0d8",
+      "agentId": "default",
+      "compactionCount": 1,
+      "summary": "Answer #1"
+    },
+    {
+      "sessionKey": "a4e914c0-ccb0-4c2b-9d87-9d885b60b9e4",
+      "agentId": "default",
+      "compactionCount": 1,
+      "summary": "Answer #1"
+    },
+    {
+      "sessionKey": "dfe55ff9-2d7f-430e-aa99-79599f9568a8",
+      "agentId": "default",
+      "compactionCount": 1,
+      "summary": "Answer #1"
+    },
+    {
+      "sessionKey": "120951df-ce9c-48ba-b530-034a365879ec",
+      "agentId": "default",
+      "compactionCount": 1,
+      "summary": "Answer #1"
+    }
+  ],
+  "narrative": "Daily Briefing - 2026-02-26\n1483 compaction(s), 0 tokens saved\n\n[main] Answer #1\n[default] Answer #1\n[default] Answer #1\n[default] Answer #1\n[default] Answer #1"
+}

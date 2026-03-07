@@ -1,0 +1,140 @@
+version: '3.8'
+
+services:
+  # Redpanda (Kafka-compatible streaming)
+  redpanda:
+    image: vectorized/redpanda:latest
+    container_name: openclaw-redpanda
+    command:
+      - redpanda
+      - start
+      - --smp 1
+      - --overprovisioned
+      - --node-id 0
+      - --kafka-addr PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr PLAINTEXT://localhost:9092
+      - --pandaproxy-addr 0.0.0.0:8082
+      - --advertise-pandaproxy-addr localhost:8082
+      - --schema-registry-addr 0.0.0.0:8081
+      - --rpc-addr 0.0.0.0:33145
+      - --advertise-rpc-addr localhost:33145
+    ports:
+      - "9092:9092"    # Kafka API
+      - "8081:8081"    # Schema Registry
+      - "8082:8082"    # PandaProxy
+      - "9644:9644"    # Admin API
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+    healthcheck:
+      test: curl -f http://localhost:9644/v1/status/ready
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # FoundationDB (State Management)
+  foundationdb:
+    image: foundationdb/foundationdb:7.1.25
+    container_name: openclaw-fdb
+    environment:
+      - FDB_CLUSTER_FILE=/etc/foundationdb/fdb.cluster
+    ports:
+      - "4500:4500"
+    volumes:
+      - fdb-data:/var/lib/foundationdb/data
+      - fdb-config:/etc/foundationdb
+    command: >
+      bash -c "
+      fdbserver --listen-address 0.0.0.0:4500 --datadir /var/lib/foundationdb/data --logdir /var/log/foundationdb --cluster-file /etc/foundationdb/fdb.cluster &
+      sleep 5
+      fdbcli --exec 'configure new single memory'
+      tail -f /dev/null
+      "
+
+  # TimescaleDB (Analytics)
+  timescaledb:
+    image: timescale/timescaledb:latest-pg14
+    container_name: openclaw-timescale
+    environment:
+      - POSTGRES_USER=openclaw
+      - POSTGRES_PASSWORD=openclaw_secret
+      - POSTGRES_DB=eventmesh
+    ports:
+      - "5432:5432"
+    volumes:
+      - timescale-data:/var/lib/postgresql/data
+      - ./init-timescale.sql:/docker-entrypoint-initdb.d/init-timescale.sql
+    healthcheck:
+      test: pg_isready -U openclaw -d eventmesh
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # Prometheus (Metrics)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: openclaw-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+
+  # Grafana (Visualization)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: openclaw-grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana-provisioning:/etc/grafana/provisioning
+    depends_on:
+      - prometheus
+
+  # Jaeger (Distributed Tracing)
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: openclaw-jaeger
+    environment:
+      - COLLECTOR_ZIPKIN_HOST_PORT=:9411
+    ports:
+      - "5775:5775/udp"
+      - "6831:6831/udp"
+      - "6832:6832/udp"
+      - "5778:5778"
+      - "16686:16686"  # UI
+      - "14268:14268"
+      - "14250:14250"
+      - "9411:9411"
+
+  # Redis (Optional - for caching and pub/sub)
+  redis:
+    image: redis:7-alpine
+    container_name: openclaw-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+
+volumes:
+  redpanda-data:
+  fdb-data:
+  fdb-config:
+  timescale-data:
+  prometheus-data:
+  grafana-data:
+  redis-data:
+
+networks:
+  default:
+    name: openclaw-event-mesh

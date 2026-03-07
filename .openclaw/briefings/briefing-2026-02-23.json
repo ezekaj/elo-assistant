@@ -1,0 +1,117 @@
+{
+  "date": "2026-02-23",
+  "generatedAt": 1771887641463,
+  "totalCompactions": 564,
+  "totalTokensSaved": 0,
+  "sessions": [
+    {
+      "sessionKey": "agent:main:main",
+      "agentId": "main",
+      "compactionCount": 536,
+      "summary": "Answer #10"
+    },
+    {
+      "sessionKey": "f77d95eb-1ee8-4300-a17e-e5852d04cbfb",
+      "agentId": "default",
+      "compactionCount": 1,
+      "summary": "Answer #1"
+    },
+    {
+      "sessionKey": "agent:web-developer:subagent:3cf160e2-b639-4ba4-8948-ed999f689e82",
+      "agentId": "web-developer",
+      "compactionCount": 5,
+      "summary": "Answer #5"
+    },
+    {
+      "sessionKey": "313cc857-9cdb-49f5-9752-1718625280eb",
+      "agentId": "default",
+      "compactionCount": 1,
+      "summary": "Session 313cc857-9cdb-49f5-9752-1718625280eb compacted at 4:04:41 AM"
+    },
+    {
+      "sessionKey": "8e027880-8eba-4f4c-8e80-e6b5181cc151",
+      "agentId": "default",
+      "compactionCount": 1,
+      "summary": "Session 8e027880-8eba-4f4c-8e80-e6b5181cc151 compacted at 4:39:01 AM"
+    },
+    {
+      "sessionKey": "af3fe7dc-e969-4c71-bc09-92b49debd6a2",
+      "agentId": "default",
+      "compactionCount": 1,
+      "summary": "Session af3fe7dc-e969-4c71-bc09-92b49debd6a2 compacted at 5:09:47 AM"
+    },
+    {
+      "sessionKey": "8c479811-a25c-46c5-a5a0-87106d7d04af",
+      "agentId": "default",
+      "compactionCount": 1,
+      "summary": "Session 8c479811-a25c-46c5-a5a0-87106d7d04af compacted at 5:58:28 AM"
+    },
+    {
+      "sessionKey": "69d7b3e2-acfe-4e79-8a23-78747d18423e",
+      "agentId": "default",
+      "compactionCount": 1,
+      "summary": "Session 69d7b3e2-acfe-4e79-8a23-78747d18423e compacted at 4:55:59 PM"
+    },
+    {
+      "sessionKey": "7881e3be-b22e-47af-aef7-0a0c3bbfde19",
+      "agentId": "default",
+      "compactionCount": 1,
+      "summary": "Session 7881e3be-b22e-47af-aef7-0a0c3bbfde19 compacted at 5:27:02 PM"
+    },
+    {
+      "sessionKey": "bde3903e-7476-4095-bde2-cbc05a8752f4",
+      "agentId": "default",
+      "compactionCount": 1,
+      "summary": "Session bde3903e-7476-4095-bde2-cbc05a8752f4 compacted at 5:58:01 PM"
+    },
+    {
+      "sessionKey": "b876cafd-3b5c-431f-b362-d3aef8119b34",
+      "agentId": "default",
+      "compactionCount": 1,
+      "summary": "Session b876cafd-3b5c-431f-b362-d3aef8119b34 compacted at 6:29:02 PM"
+    },
+    {
+      "sessionKey": "083f85bb-bd81-4622-adf4-be61ec751627",
+      "agentId": "default",
+      "compactionCount": 1,
+      "summary": "Session 083f85bb-bd81-4622-adf4-be61ec751627 compacted at 7:00:03 PM"
+    },
+    {
+      "sessionKey": "78892936-9e7d-4ad1-a2a7-961f18916811",
+      "agentId": "default",
+      "compactionCount": 1,
+      "summary": "Session 78892936-9e7d-4ad1-a2a7-961f18916811 compacted at 7:31:03 PM"
+    },
+    {
+      "sessionKey": "2fcfdbf9-c84d-4a7c-9f67-c2a28887f3eb",
+      "agentId": "default",
+      "compactionCount": 1,
+      "summary": "Session 2fcfdbf9-c84d-4a7c-9f67-c2a28887f3eb compacted at 10:27:28 PM"
+    },
+    {
+      "sessionKey": "agent:main:subagent:581f58ed-1eab-46f6-ac4c-e360c4c6ec4b",
+      "agentId": "main",
+      "compactionCount": 2,
+      "summary": "Answer #2"
+    },
+    {
+      "sessionKey": "agent:main:subagent:ee175748-fc98-402d-9bf7-26b472d7be42",
+      "agentId": "main",
+      "compactionCount": 2,
+      "summary": "Answer #2"
+    },
+    {
+      "sessionKey": "agent:main:subagent:dd3f0439-a195-41bc-bc0e-bdaa0e68127c",
+      "agentId": "main",
+      "compactionCount": 4,
+      "summary": "Answer #4"
+    },
+    {
+      "sessionKey": "agent:main:subagent:65f8cb63-42c7-4314-86c6-9f9f2ef1d6a2",
+      "agentId": "main",
+      "compactionCount": 3,
+      "summary": "Answer #3"
+    }
+  ],
+  "narrative": "Daily Briefing - 2026-02-23\n564 compaction(s), 0 tokens saved\n\n[main] Answer #10\n[default] Answer #1\n[web-developer] Answer #5\n[default] Session 313cc857-9cdb-49f5-9752-1718625280eb compacted at 4:04:41 AM\n[default] Session 8e027880-8eba-4f4c-8e80-e6b5181cc151 compacted at 4:39:01 AM\n[default] Session af3fe7dc-e969-4c71-bc09-92b49debd6a2 compacted at 5:09:47 AM\n[default] Session 8c479811-a25c-46c5-a5a0-87106d7d04af compacted at 5:58:28 AM\n[default] Session 69d7b3e2-acfe-4e79-8a23-78747d18423e compacted at 4:55:59 PM\n[default] Session 7881e3be-b22e-47af-aef7-0a0c3bbfde19 compacted at 5:27:02 PM\n[default] Session bde3903e-7476-4095-bde2-cbc05a8752f4 compacted at 5:58:01 PM\n[default] Session b876cafd-3b5c-431f-b362-d3aef8119b34 compacted at 6:29:02 PM\n[default] Session 083f85bb-bd81-4622-adf4-be61ec751627 compacted at 7:00:03 PM\n[default] Session 78892936-9e7d-4ad1-a2a7-961f18916811 compacted at 7:31:03 PM\n[default] Session 2fcfdbf9-c84d-4a7c-9f67-c2a28887f3eb compacted at 10:27:28 PM\n[main] Answer #2\n[main] Answer #2\n[main] Answer #4\n[main] Answer #3"
+}

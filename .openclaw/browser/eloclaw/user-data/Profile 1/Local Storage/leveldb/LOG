@@ -1,0 +1,6 @@
+2026/03/07-16:31:25.055 197d0ea Reusing MANIFEST /Users/tolga/.openclaw/browser/eloclaw/user-data/Profile 1/Local Storage/leveldb/MANIFEST-000001
+2026/03/07-16:31:25.056 197d0ea Recovering log #3
+2026/03/07-16:31:25.057 197d0ea Reusing old log /Users/tolga/.openclaw/browser/eloclaw/user-data/Profile 1/Local Storage/leveldb/000003.log 
+2026/03/07-17:10:25.113 197d0f1 Level-0 table #5: started
+2026/03/07-17:10:25.122 197d0f1 Level-0 table #5: 298067 bytes OK
+2026/03/07-17:10:25.125 197d0f1 Delete type=0 #3

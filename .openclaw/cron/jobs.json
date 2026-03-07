@@ -1,0 +1,135 @@
+{
+  "version": 1,
+  "jobs": [
+    {
+      "id": "ae772cd5-dfd0-4db6-acab-8dd95f4ce212",
+      "name": "email-check",
+      "description": "Check emails every 15 minutes, draft replies for important ones",
+      "enabled": false,
+      "deleteAfterRun": false,
+      "createdAtMs": 1769778775972,
+      "updatedAtMs": 1769818696234,
+      "schedule": {
+        "kind": "every",
+        "everyMs": 900000
+      },
+      "sessionTarget": "isolated",
+      "wakeMode": "next-heartbeat",
+      "payload": {
+        "kind": "agentTurn",
+        "message": "Check my email inbox using himalaya. Summarize any new emails. If any require a reply, draft a response.",
+        "thinking": "low"
+      },
+      "state": {
+        "lastError": "GrammyError: Call to 'sendMessage' failed! (403: Forbidden: bot was blocked by the user)",
+        "lastRunAtMs": 1769818544925,
+        "lastStatus": "error",
+        "lastDurationMs": 118556
+      },
+      "delivery": {
+        "mode": "announce",
+        "channel": "telegram"
+      }
+    },
+    {
+      "id": "b0cc5d47-2750-4a47-b0bf-811a837a56bd",
+      "agentId": "main",
+      "name": "LinkedIn Morning Engagement",
+      "enabled": true,
+      "createdAtMs": 1772289627061,
+      "updatedAtMs": 1772289627061,
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 8 * * 1-5",
+        "tz": "Europe/Berlin"
+      },
+      "sessionTarget": "isolated",
+      "wakeMode": "next-heartbeat",
+      "payload": {
+        "kind": "agentTurn",
+        "message": "🔔 LinkedIn Morning Block (8:00 AM)\n\nTime to engage on LinkedIn for Z.E Digital Tech growth:\n\n• Comment on 5 AI/tech posts with meaningful insights\n• React to 10 posts in your feed\n• Check notifications and respond to comments on your posts\n\nFocus hashtags: #AI #HospitalityTech #DigitalTransformation\n\nThis is your daily LinkedIn growth reminder."
+      },
+      "delivery": {
+        "mode": "announce"
+      },
+      "state": {
+        "nextRunAtMs": 1773039600000
+      }
+    },
+    {
+      "id": "a9ea0976-07b5-4f1c-a1b6-04a0a6c1923b",
+      "agentId": "main",
+      "name": "LinkedIn Afternoon Engagement",
+      "enabled": true,
+      "createdAtMs": 1772289627071,
+      "updatedAtMs": 1772289627071,
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 14 * * 1-5",
+        "tz": "Europe/Berlin"
+      },
+      "sessionTarget": "isolated",
+      "wakeMode": "next-heartbeat",
+      "payload": {
+        "kind": "agentTurn",
+        "message": "🔔 LinkedIn Afternoon Block (2:00 PM)\n\nTime for the second engagement session:\n\n• Comment on 5 hospitality/tech posts (Sofia's target audience)\n• Send 3-5 connection requests to:\n  - Hotel GMs, CTOs, Innovation Managers\n  - AI/ML professionals in DACH region\n  - Tech journalists\n• Find and comment on 1 trending industry post\n\nRemember to personalize connection requests!"
+      },
+      "delivery": {
+        "mode": "announce"
+      },
+      "state": {
+        "nextRunAtMs": 1773061200000
+      }
+    },
+    {
+      "id": "5158bae2-987c-455a-b28b-b5a13a8545b4",
+      "agentId": "main",
+      "name": "LinkedIn Evening Engagement",
+      "enabled": true,
+      "createdAtMs": 1772289627078,
+      "updatedAtMs": 1772289627078,
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 18 * * 1-5",
+        "tz": "Europe/Berlin"
+      },
+      "sessionTarget": "isolated",
+      "wakeMode": "next-heartbeat",
+      "payload": {
+        "kind": "agentTurn",
+        "message": "🔔 LinkedIn Evening Block (6:00 PM)\n\nFinal engagement session of the day:\n\n• Engage with 3 posts from your connections\n• Review analytics: Which comments got the most impressions?\n• Save promising posts for content ideas\n• Plan tomorrow's company post if it's your posting day\n\nWeekly content schedule:\nMon: Industry Insight\nTue: Company Update\nWed: Thought Leadership\nThu: Case Study\nFri: Culture/Fun"
+      },
+      "delivery": {
+        "mode": "announce"
+      },
+      "state": {
+        "nextRunAtMs": 1773075600000
+      }
+    },
+    {
+      "id": "d290680e-e386-4c54-ad7e-254e3eda2bc3",
+      "agentId": "main",
+      "name": "LinkedIn Weekly Analytics",
+      "enabled": true,
+      "createdAtMs": 1772289627084,
+      "updatedAtMs": 1772289627084,
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 10 * * 0",
+        "tz": "Europe/Berlin"
+      },
+      "sessionTarget": "isolated",
+      "wakeMode": "next-heartbeat",
+      "payload": {
+        "kind": "agentTurn",
+        "message": "📊 LinkedIn Weekly Review (Sunday)\n\nTime to review this week's performance:\n\n1. Check follower growth (Goal: 50/month)\n2. Review top-performing posts\n3. Analyze which comments drove most engagement\n4. Note successful hashtags\n5. Plan next week's content (batch write posts)\n\nUpdate metrics in: ~/.openclaw/workspace/memory/linkedin-growth-plan.md"
+      },
+      "delivery": {
+        "mode": "announce"
+      },
+      "state": {
+        "nextRunAtMs": 1772960400000
+      }
+    }
+  ]
+}

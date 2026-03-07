@@ -1,0 +1,74 @@
+{
+  // Performance-optimized config
+  // Created: 2026-03-03
+  
+  // Use faster models for simple tasks
+  agents: {
+    defaults: {
+      model: {
+        primary: "zhipu/glm-4-flash",  // Faster than glm-5
+        fallbacks: ["zhipu/glm-5"]
+      },
+      
+      // Aggressive context pruning = faster prompts
+      contextPruning: {
+        mode: "cache-ttl",
+        ttl: "30m",
+        softTrimRatio: 0.3,
+        tools: {
+          deny: ["browser", "canvas"]  // Skip heavy tool context
+        }
+      },
+      
+      // Less chatty = faster responses
+      humanDelay: {
+        enabled: false
+      },
+      
+      // Faster heartbeats
+      heartbeat: {
+        intervalMs: 3600000  // 1 hour instead of 30min
+      }
+    }
+  },
+  
+  // Predictive engine - less frequent checks
+  predictive: {
+    enabled: true,
+    schedule: {
+      checkIntervalMs: 3600000,        // 1 hour (was 30min)
+      consolidationIntervalMs: 7200000 // 2 hours (was 1hr)
+    },
+    autoDeliver: {
+      maxPerDay: 1  // Fewer interruptions
+    },
+    learning: {
+      autoLearn: false  // Disable if not using predictions
+    }
+  },
+  
+  // Memory search limits
+  tools: {
+    memorySearch: {
+      maxResults: 3,      // Fewer results = faster
+      maxSnippetChars: 500 // Smaller snippets
+    }
+  },
+  
+  // Disable unused features
+  browser: {
+    enabled: false  // If not using browser automation
+  },
+  
+  // Logging - reduce I/O
+  logging: {
+    level: "warn",  // Less logging = faster
+    verbose: false
+  },
+  
+  // Session settings
+  session: {
+    maxHistoryMessages: 50,  // Smaller context
+    compactThreshold: 30000  // Compact sooner
+  }
+}

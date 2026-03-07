@@ -1,0 +1,31 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+
+rule_files: []
+
+scrape_configs:
+  # OpenClaw Agent Event Mesh
+  - job_name: 'openclaw-event-mesh'
+    static_configs:
+      - targets: ['host.docker.internal:9091']
+
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Redpanda metrics
+  - job_name: 'redpanda'
+    static_configs:
+      - targets: ['redpanda:9644']
+
+  # TimescaleDB exporter (if using postgres_exporter)
+  # - job_name: 'timescaledb'
+  #   static_configs:
+  #     - targets: ['timescaledb-exporter:9187']

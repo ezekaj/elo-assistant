@@ -1,0 +1,12 @@
+2026/02/18-12:55:26.676 147d1 Reusing MANIFEST /Users/tolga/.openclaw/browser/openclaw/user-data/Default/IndexedDB/https_www.youtube.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/02/18-12:55:26.676 147d1 Recovering log #18
+2026/02/18-12:55:26.678 147d1 Reusing old log /Users/tolga/.openclaw/browser/openclaw/user-data/Default/IndexedDB/https_www.youtube.com_0.indexeddb.leveldb/000018.log 
+2026/02/18-15:22:13.619 147d0 Level-0 table #23: started
+2026/02/18-15:22:13.631 147d0 Level-0 table #23: 1806901 bytes OK
+2026/02/18-15:22:13.633 147d0 Delete type=0 #18
+2026/02/18-15:34:37.351 147d0 Compacting 1@1 + 1@2 files
+2026/02/18-15:34:37.354 147d0 Generated table #24@1: 359 keys, 66103 bytes
+2026/02/18-15:34:37.355 147d0 Compacted 1@1 + 1@2 files => 66103 bytes
+2026/02/18-15:34:37.356 147d0 compacted to: files[ 0 0 1 0 0 0 0 ]
+2026/02/18-15:34:37.356 147d0 Delete type=2 #20
+2026/02/18-15:34:37.356 147d0 Delete type=2 #23

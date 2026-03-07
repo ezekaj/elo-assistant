@@ -1,0 +1,9 @@
+#!/bin/bash
+# Wrapper script for code-evolution
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+export OPENCLAW_DIR="${OPENCLAW_DIR:-/Users/tolga/.openclaw/workspace/openclaw}"
+export SANDBOX_BASE="${SANDBOX_BASE:-/tmp/openclaw-sandbox}"
+
+node "${SCRIPT_DIR}/dist/cli.js" "$@"

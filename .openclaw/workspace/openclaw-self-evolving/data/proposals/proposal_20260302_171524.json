@@ -1,0 +1,35 @@
+{
+  "created_at": "2026-03-02T17:15:24.940606",
+  "status": "awaiting_approval",
+  "analysis_days": 7,
+  "proposals": [
+    {
+      "id": "retry-exec-01",
+      "source": "retry_analysis",
+      "title": "`exec` 도구 연속 재시도 패턴 개선 (25개 세션 영향)",
+      "severity": "high",
+      "evidence": "최근 7일간 `exec` 도구를 5회 이상 연속 호출한 세션: 25개\n최대 연속 호출: 54회 (같은 도구 중단 없이 연속)\n총 재시도 이벤트: 47건\n→ 5회 이상 동일 도구 연속 호출 = 실패 후 재시도 루프 가능성\n→ read/write/edit/image 등 파일 I/O는 제외하고 집계한 수치",
+      "before": "연속 `exec` 재시도 시 규칙 없음 (무한 루프 가능)",
+      "after": "## ⚡ exec 연속 재시도 방지\n같은 exec를 3회 이상 재시도하기 전에:\n1. 첫 번째 실패 시 에러 메시지를 사용자에게 보고\n2. 두 번째 시도는 방법을 변경해서 (다른 옵션/경로)\n3. 세 번째 실패 시 중단하고 수동 확인 요청\n이 패턴을 AGENTS.md \"Exec 에러 노출 금지 규칙\"에 추가",
+      "section": "Exec 에러 노출 금지 규칙",
+      "diff_type": "agents_md_addition"
+    },
+    {
+      "id": "session-health-01",
+      "source": "session_health",
+      "title": "과도하게 긴 세션 감지 (4개 세션, 최대 컴팩션 14회)",
+      "severity": "low",
+      "evidence": "컴팩션 5회 이상 발생한 세션: 4개\n최대 컴팩션 횟수: 14회 (1세션에서)\n→ 컴팩션 = 컨텍스트 손실 위험 + 토큰 낭비\n→ 복잡한 작업은 서브에이전트로 분리가 효과적",
+      "before": "장시간 세션에 대한 분리 가이드 없음",
+      "after": "## 📦 서브에이전트 분리 기준\n다음 조건 중 하나라도 해당하면 서브에이전트 사용:\n- 예상 작업 시간 > 10분\n- 도구 호출 예상 > 20회\n- 메인 채널 컨텍스트 오염 우려\n→ `subagents` 도구로 spawn, 결과는 push-based 자동 보고",
+      "section": "복잡한 배경 작업",
+      "diff_type": "agents_md_update"
+    }
+  ],
+  "analysis_summary": {
+    "session_count": 7,
+    "total_complaint_hits": 0,
+    "retry_events": 47,
+    "heavy_sessions": 4
+  }
+}

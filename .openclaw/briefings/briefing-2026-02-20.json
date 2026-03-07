@@ -1,0 +1,75 @@
+{
+  "date": "2026-02-20",
+  "generatedAt": 1771631737039,
+  "totalCompactions": 63,
+  "totalTokensSaved": 0,
+  "sessions": [
+    {
+      "sessionKey": "agent:main:main",
+      "agentId": "agent",
+      "compactionCount": 51,
+      "summary": "Answer #7"
+    },
+    {
+      "sessionKey": "8e3a48a9-1943-4b2e-a60d-5aab870ae74b",
+      "agentId": "default",
+      "compactionCount": 1,
+      "summary": "Session 8e3a48a9-1943-4b2e-a60d-5aab870ae74b compacted at 12:15:15 PM"
+    },
+    {
+      "sessionKey": "agent:qwen:subagent:ebe091d7-5cdf-466d-a866-2949b0b05b4a",
+      "agentId": "agent",
+      "compactionCount": 2,
+      "summary": "Answer #2"
+    },
+    {
+      "sessionKey": "agent:qwen:subagent:4f0a14dc-68ee-4693-a5d3-eb888724f759",
+      "agentId": "agent",
+      "compactionCount": 2,
+      "summary": "Answer #2"
+    },
+    {
+      "sessionKey": "fabac484-3ec8-45b4-997f-5136f8d6c89a",
+      "agentId": "default",
+      "compactionCount": 1,
+      "summary": "Session fabac484-3ec8-45b4-997f-5136f8d6c89a compacted at 6:14:46 PM"
+    },
+    {
+      "sessionKey": "f2d1c0cc-1a87-40bc-be09-b67f76264c83",
+      "agentId": "default",
+      "compactionCount": 1,
+      "summary": "Session f2d1c0cc-1a87-40bc-be09-b67f76264c83 compacted at 6:43:49 PM"
+    },
+    {
+      "sessionKey": "b012196a-9bd1-4f32-a80d-72d8b9a2460a",
+      "agentId": "default",
+      "compactionCount": 1,
+      "summary": "Session b012196a-9bd1-4f32-a80d-72d8b9a2460a compacted at 7:13:56 PM"
+    },
+    {
+      "sessionKey": "e841a24e-6957-4c7e-96e2-1e7347eb8b7e",
+      "agentId": "default",
+      "compactionCount": 1,
+      "summary": "Session e841a24e-6957-4c7e-96e2-1e7347eb8b7e compacted at 7:45:51 PM"
+    },
+    {
+      "sessionKey": "94368edb-beff-4b30-bd0d-57f06f7c1cd2",
+      "agentId": "default",
+      "compactionCount": 1,
+      "summary": "Session 94368edb-beff-4b30-bd0d-57f06f7c1cd2 compacted at 11:54:49 PM"
+    },
+    {
+      "sessionKey": "fcd5c832-0e89-4e03-b483-da9d3f7d1637",
+      "agentId": "default",
+      "compactionCount": 1,
+      "summary": "Session fcd5c832-0e89-4e03-b483-da9d3f7d1637 compacted at 12:25:10 AM"
+    },
+    {
+      "sessionKey": "12d2048c-d576-4671-9d58-2cca3c01e97e",
+      "agentId": "default",
+      "compactionCount": 1,
+      "summary": "Session 12d2048c-d576-4671-9d58-2cca3c01e97e compacted at 12:55:37 AM"
+    }
+  ],
+  "narrative": "Daily Briefing - 2026-02-20\n63 compaction(s), 0 tokens saved\n\n[agent] Answer #7\n[default] Session 8e3a48a9-1943-4b2e-a60d-5aab870ae74b compacted at 12:15:15 PM\n[agent] Answer #2\n[agent] Answer #2\n[default] Session fabac484-3ec8-45b4-997f-5136f8d6c89a compacted at 6:14:46 PM\n[default] Session f2d1c0cc-1a87-40bc-be09-b67f76264c83 compacted at 6:43:49 PM\n[default] Session b012196a-9bd1-4f32-a80d-72d8b9a2460a compacted at 7:13:56 PM\n[default] Session e841a24e-6957-4c7e-96e2-1e7347eb8b7e compacted at 7:45:51 PM\n[default] Session 94368edb-beff-4b30-bd0d-57f06f7c1cd2 compacted at 11:54:49 PM\n[default] Session fcd5c832-0e89-4e03-b483-da9d3f7d1637 compacted at 12:25:10 AM\n[default] Session 12d2048c-d576-4671-9d58-2cca3c01e97e compacted at 12:55:37 AM"
+}

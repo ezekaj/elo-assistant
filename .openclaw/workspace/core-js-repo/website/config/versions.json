@@ -1,0 +1,12 @@
+[
+  {
+    "label": "v3",
+    "default": true,
+    "branch": "master"
+  },
+  {
+    "label": "v4 (alpha)",
+    "branch": "v4",
+    "path": "v4"
+  }
+]

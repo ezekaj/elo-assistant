@@ -1,0 +1,21 @@
+{
+  "date": "2026-03-03",
+  "generatedAt": 1772582389026,
+  "totalCompactions": 706,
+  "totalTokensSaved": 0,
+  "sessions": [
+    {
+      "sessionKey": "agent:main:main",
+      "agentId": "main",
+      "compactionCount": 705,
+      "summary": "Answer #7"
+    },
+    {
+      "sessionKey": "f7416826-5449-4814-9fbb-c3ba3888c758",
+      "agentId": "default",
+      "compactionCount": 1,
+      "summary": "Answer #1"
+    }
+  ],
+  "narrative": "Daily Briefing - 2026-03-03\n706 compaction(s), 0 tokens saved\n\n[main] Answer #7\n[default] Answer #1"
+}

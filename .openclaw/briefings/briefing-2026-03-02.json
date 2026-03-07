@@ -1,0 +1,75 @@
+{
+  "date": "2026-03-02",
+  "generatedAt": 1772471450281,
+  "totalCompactions": 1051,
+  "totalTokensSaved": 0,
+  "sessions": [
+    {
+      "sessionKey": "agent:main:main",
+      "agentId": "main",
+      "compactionCount": 838,
+      "summary": "Answer #5"
+    },
+    {
+      "sessionKey": "agent:main:subagent:d47ff4c6-52c2-4b95-835b-216c1cca7ffd",
+      "agentId": "main",
+      "compactionCount": 61,
+      "summary": "Answer #9"
+    },
+    {
+      "sessionKey": "agent:main:subagent:0300a623-2083-4e3e-8c5a-43a6852dbc99",
+      "agentId": "main",
+      "compactionCount": 61,
+      "summary": "Answer #9"
+    },
+    {
+      "sessionKey": "50de85e2-844a-43d6-893a-e3f79687501a",
+      "agentId": "default",
+      "compactionCount": 1,
+      "summary": "Answer #1"
+    },
+    {
+      "sessionKey": "agent:main:subagent:e6f97025-164b-42fb-b621-ad6ab0b54cfb",
+      "agentId": "main",
+      "compactionCount": 1,
+      "summary": "Answer #1"
+    },
+    {
+      "sessionKey": "agent:main:subagent:077b65c7-2ae1-4324-8f86-daae17cd6e32",
+      "agentId": "main",
+      "compactionCount": 36,
+      "summary": "Answer #10"
+    },
+    {
+      "sessionKey": "d3ba946c-4780-4170-9dd0-7bc1bd1ebbdb",
+      "agentId": "default",
+      "compactionCount": 1,
+      "summary": "Answer #1"
+    },
+    {
+      "sessionKey": "agent:main:subagent:c5ecd206-7aed-4039-a5d9-2aad04d46572",
+      "agentId": "main",
+      "compactionCount": 31,
+      "summary": "Answer #5"
+    },
+    {
+      "sessionKey": "agent:main:subagent:611690ce-9eb6-4973-8d0e-e0bbbcd62382",
+      "agentId": "main",
+      "compactionCount": 19,
+      "summary": "Answer #6"
+    },
+    {
+      "sessionKey": "650c8a7d-0a8d-401d-aa19-2b62f3acaf71",
+      "agentId": "default",
+      "compactionCount": 1,
+      "summary": "Answer #1"
+    },
+    {
+      "sessionKey": "c9b59fad-8304-4161-94bf-0dd58a37bd27",
+      "agentId": "default",
+      "compactionCount": 1,
+      "summary": "Answer #1"
+    }
+  ],
+  "narrative": "Daily Briefing - 2026-03-02\n1051 compaction(s), 0 tokens saved\n\n[main] Answer #5\n[main] Answer #9\n[main] Answer #9\n[default] Answer #1\n[main] Answer #1\n[main] Answer #10\n[default] Answer #1\n[main] Answer #5\n[main] Answer #6\n[default] Answer #1\n[default] Answer #1"
+}

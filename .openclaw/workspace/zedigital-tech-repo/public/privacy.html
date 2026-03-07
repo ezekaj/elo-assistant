@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy Policy | Z.E Digital Tech</title>
+    <link rel="icon" type="image/png" href="/favicon.png">
+    <style>
+        @font-face {
+            font-family: 'JetBrains Mono';
+            font-style: normal;
+            font-weight: 400 700;
+            font-display: swap;
+            src: url(/fonts/jetbrains-mono-variable.woff2) format('woff2');
+        }
+        @font-face {
+            font-family: 'Syncopate';
+            font-style: normal;
+            font-weight: 400;
+            font-display: swap;
+            src: url(/fonts/syncopate-400.woff2) format('woff2');
+        }
+        @font-face {
+            font-family: 'Syncopate';
+            font-style: normal;
+            font-weight: 700;
+            font-display: swap;
+            src: url(/fonts/syncopate-700.woff2) format('woff2');
+        }
+
+        :root {
+            --bg: #030303;
+            --text: #f0f0f0;
+            --text-muted: rgba(255, 255, 255, 0.7);
+            --accent: #ff003c;
+            --accent-2: #00f3ff;
+            --border: rgba(255, 255, 255, 0.15);
+            --font-display: 'Syncopate', sans-serif;
+            --font-code: 'JetBrains Mono', monospace;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: var(--font-code);
+            line-height: 1.8;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 60px 24px;
+        }
+
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--accent-2);
+            text-decoration: none;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            margin-bottom: 40px;
+            border: 1px solid rgba(0, 243, 255, 0.3);
+            padding: 8px 16px;
+            transition: all 0.3s;
+        }
+
+        .back-link:hover {
+            background: rgba(0, 243, 255, 0.1);
+            border-color: rgba(0, 243, 255, 0.6);
+        }
+
+        h1 {
+            font-family: var(--font-display);
+            font-size: 2rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+            letter-spacing: 0.05em;
+        }
+
+        .last-updated {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            margin-bottom: 48px;
+            padding-bottom: 24px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        h2 {
+            font-family: var(--font-display);
+            font-size: 1rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            margin-top: 40px;
+            margin-bottom: 16px;
+            color: var(--accent-2);
+            letter-spacing: 0.05em;
+        }
+
+        p, li {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+        }
+
+        ul {
+            list-style: none;
+            padding-left: 0;
+        }
+
+        ul li {
+            padding-left: 20px;
+            position: relative;
+        }
+
+        ul li::before {
+            content: '\25B8';
+            position: absolute;
+            left: 0;
+            color: var(--accent);
+        }
+
+        a {
+            color: var(--accent-2);
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        .section {
+            margin-bottom: 32px;
+            padding: 24px;
+            border: 1px solid var(--border);
+            background: rgba(10, 10, 10, 0.5);
+        }
+
+        .footer-note {
+            margin-top: 48px;
+            padding-top: 24px;
+            border-top: 1px solid var(--border);
+            font-size: 0.7rem;
+            color: rgba(255, 255, 255, 0.4);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                padding: 40px 16px;
+            }
+            h1 {
+                font-size: 1.4rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/" class="back-link">&larr; Back to Site</a>
+
+        <h1>Privacy Policy</h1>
+        <p class="last-updated">Last updated: February 20, 2026</p>
+
+        <div class="section">
+            <h2>Overview</h2>
+            <p>Z.E Digital Tech ("we", "us", "our") operates the website at zedigital.tech. This page describes what data is processed when you use our site, which third-party services are involved, and what your rights are.</p>
+        </div>
+
+        <div class="section">
+            <h2>Contact Form (EmailJS)</h2>
+            <p>When you submit the contact form, the following data is sent to EmailJS, a third-party email delivery service:</p>
+            <ul>
+                <li>Your name</li>
+                <li>Your email address</li>
+                <li>The service type you selected</li>
+                <li>Your message</li>
+            </ul>
+            <p>This data is transmitted directly from your browser to EmailJS servers and then forwarded to our inbox at contact@zedigital.tech. We do not store your form submissions on our own servers. EmailJS processes the data solely to deliver the email. You can review their privacy policy at <a href="https://www.emailjs.com/legal/privacy-policy/" target="_blank" rel="noopener noreferrer">emailjs.com/legal/privacy-policy</a>.</p>
+        </div>
+
+        <div class="section">
+            <h2>AI Chat Assistant (Google Generative AI)</h2>
+            <p>Our site features an AI-powered chat assistant. When you use this feature, your messages are sent to the Google Generative AI API for processing. Google may process these messages in accordance with their terms of service. No chat history is stored on our servers. You can review Google's privacy policy at <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">policies.google.com/privacy</a>.</p>
+        </div>
+
+        <div class="section">
+            <h2>Smooth Scrolling (Lenis)</h2>
+            <p>We load the Lenis smooth scrolling library from a CDN (unpkg.com). This means your browser makes a request to unpkg's servers to fetch this script. No personal data is transmitted to Lenis beyond standard HTTP request headers (IP address, user agent). Lenis does not set cookies or collect any data.</p>
+        </div>
+
+        <div class="section">
+            <h2>Cookies and Tracking</h2>
+            <p>This website does not use tracking cookies, analytics services, or advertising pixels. The only data stored in your browser is:</p>
+            <ul>
+                <li>A consent preference in localStorage (to remember that you acknowledged the third-party services notice)</li>
+            </ul>
+            <p>localStorage is not shared with any third party and remains entirely on your device.</p>
+        </div>
+
+        <div class="section">
+            <h2>Fonts</h2>
+            <p>All fonts used on this site (JetBrains Mono, Syncopate) are self-hosted. No requests are made to external font services such as Google Fonts.</p>
+        </div>
+
+        <div class="section">
+            <h2>Your Rights</h2>
+            <p>Under the GDPR and similar privacy regulations, you have the right to:</p>
+            <ul>
+                <li>Request access to any personal data we hold about you</li>
+                <li>Request correction or deletion of your personal data</li>
+                <li>Object to the processing of your personal data</li>
+                <li>Withdraw consent at any time</li>
+            </ul>
+            <p>Since we do not maintain a database of user data, most requests will confirm that no data is stored. If you have submitted a contact form and wish to have your email removed from our inbox, please contact us.</p>
+        </div>
+
+        <div class="section">
+            <h2>Contact</h2>
+            <p>For any privacy-related questions or requests, contact us at:</p>
+            <p><a href="mailto:contact@zedigital.tech">contact@zedigital.tech</a></p>
+        </div>
+
+        <div class="footer-note">
+            <p>Z.E Digital Tech &mdash; Tirana, Albania</p>
+        </div>
+    </div>
+</body>
+</html>

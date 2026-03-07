@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "nodeId": "f4655e95-b100-450d-b85f-92bb462e6904",
+  "displayName": "MacBook Pro (2)",
+  "gateway": {
+    "host": "127.0.0.1",
+    "port": 18789,
+    "tls": false
+  }
+}

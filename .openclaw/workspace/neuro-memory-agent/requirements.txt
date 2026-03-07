@@ -1,0 +1,31 @@
+## Neuro-Memory-Agent Requirements
+## Bio-inspired episodic memory system with Bayesian surprise
+
+# Core dependencies
+numpy>=1.24.0
+scipy>=1.10.0
+torch>=2.0.0
+scikit-learn>=1.3.0
+
+# Vector database
+chromadb>=0.4.0
+faiss-cpu>=1.7.4  # Optional: for large-scale similarity search
+
+# Graph algorithms
+networkx>=3.0
+
+# HMM for event segmentation
+hmmlearn>=0.3.0
+
+# Utilities
+python-dateutil>=2.8.0
+tqdm>=4.65.0
+
+# Optional: For advanced embeddings
+sentence-transformers>=2.2.0  # Optional: pre-trained encoders
+
+# Development
+pytest>=7.4.0
+jupyter>=1.0.0
+matplotlib>=3.7.0
+seaborn>=0.12.0

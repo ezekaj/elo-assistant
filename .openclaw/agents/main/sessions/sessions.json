@@ -1,0 +1,971 @@
+{
+  "agent:main:main": {
+    "sessionId": "aac76b3c-5267-4877-b63f-12a53b065a09",
+    "updatedAt": 1772904652083,
+    "systemSent": true,
+    "abortedLastRun": false,
+    "model": "glm-5",
+    "contextTokens": 64000,
+    "origin": {
+      "label": "eloclaw-tui",
+      "provider": "webchat",
+      "from": "heartbeat",
+      "to": "heartbeat",
+      "surface": "webchat",
+      "chatType": "direct"
+    },
+    "lastChannel": "webchat",
+    "lastTo": "heartbeat",
+    "skillsSnapshot": {
+      "prompt": "\n\nThe following skills provide specialized instructions for specific tasks.\nUse the read tool to load a skill's file when the task matches its description.\nWhen a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.\n\n<available_skills>\n  <skill>\n    <name>1password</name>\n    <description>Set up and use 1Password CLI (op). Use when installing the CLI, enabling desktop app integration, signing in (single or multi-account), or reading/injecting/running secrets via op.</description>\n    <location>/Users/tolga/.openclaw/workspace/openclaw/skills/1password/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>apple-notes</name>\n    <description>Manage Apple Notes via the `memo` CLI on macOS (create, view, edit, delete, search, move, and export notes). Use when a user asks OpenClaw to add a note, list notes, search notes, or manage note folders.</description>\n    <location>/Users/tolga/.openclaw/workspace/openclaw/skills/apple-notes/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>apple-reminders</name>\n    <description>Manage Apple Reminders via the `remindctl` CLI on macOS (list, add, edit, complete, delete). Supports lists, date filters, and JSON/plain output.</description>\n    <location>/Users/tolga/.openclaw/workspace/openclaw/skills/apple-reminders/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>bear-notes</name>\n    <description>Create, search, and manage Bear notes via grizzly CLI.</description>\n    <location>/Users/tolga/.openclaw/workspace/openclaw/skills/bear-notes/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>bird</name>\n    <description>X/Twitter CLI for reading, searching, posting, and engagement via cookies.</description>\n    <location>/Users/tolga/.openclaw/workspace/openclaw/skills/bird/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>blogwatcher</name>\n    <description>Monitor blogs and RSS/Atom feeds for updates using the blogwatcher CLI.</description>\n    <location>/Users/tolga/.openclaw/workspace/openclaw/skills/blogwatcher/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>blucli</name>\n    <description>BluOS CLI (blu) for discovery, playback, grouping, and volume.</description>\n    <location>/Users/tolga/.openclaw/workspace/openclaw/skills/blucli/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>camsnap</name>\n    <description>Capture frames or clips from RTSP/ONVIF cameras.</description>\n    <location>/Users/tolga/.openclaw/workspace/openclaw/skills/camsnap/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>coding-agent</name>\n    <description>Run Codex CLI, Claude Code, OpenCode, or Pi Coding Agent via background process for programmatic control.</description>\n    <location>/Users/tolga/.openclaw/workspace/openclaw/skills/coding-agent/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>eightctl</name>\n    <description>Control Eight Sleep pods (status, temperature, alarms, schedules).</description>\n    <location>/Users/tolga/.openclaw/workspace/openclaw/skills/eightctl/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>evolution</name>\n    <description>Self-improving code evolution system for OpenClaw. Analyze codebase, propose improvements, and apply changes with approval. Runs weekly by default (Sundays 2am).</description>\n    <location>/Users/tolga/.openclaw/workspace/openclaw/skills/evolution/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>gemini</name>\n    <description>Gemini CLI for one-shot Q&amp;A, summaries, and generation.</description>\n    <location>/Users/tolga/.openclaw/workspace/openclaw/skills/gemini/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>gifgrep</name>\n    <description>Search GIF providers with CLI/TUI, download results, and extract stills/sheets.</description>\n    <location>/Users/tolga/.openclaw/workspace/openclaw/skills/gifgrep/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>github</name>\n    <description>Interact with GitHub using the `gh` CLI. Use `gh issue`, `gh pr`, `gh run`, and `gh api` for issues, PRs, CI runs, and advanced queries.</description>\n    <location>/Users/tolga/.openclaw/workspace/openclaw/skills/github/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>gog</name>\n    <description>Google Workspace CLI for Gmail, Calendar, Drive, Contacts, Sheets, and Docs.</description>\n    <location>/Users/tolga/.openclaw/workspace/openclaw/skills/gog/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>healthcheck</name>\n    <description>Host security hardening and risk-tolerance configuration for OpenClaw deployments. Use when a user asks for security audits, firewall/SSH/update hardening, risk posture, exposure review, OpenClaw cron scheduling for periodic checks, or version status checks on a machine running OpenClaw (laptop, workstation, Pi, VPS).</description>\n    <location>/Users/tolga/.openclaw/workspace/openclaw/skills/healthcheck/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>himalaya</name>\n    <description>CLI to manage emails via IMAP/SMTP. Use `himalaya` to list, read, write, reply, forward, search, and organize emails from the terminal. Supports multiple accounts and message composition with MML (MIME Meta Language).</description>\n    <location>/Users/tolga/.openclaw/workspace/openclaw/skills/himalaya/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>imsg</name>\n    <description>iMessage/SMS CLI for listing chats, history, watch, and sending.</description>\n    <location>/Users/tolga/.openclaw/workspace/openclaw/skills/imsg/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>mcporter</name>\n    <description>Use the mcporter CLI to list, configure, auth, and call MCP servers/tools directly (HTTP or stdio), including ad-hoc servers, config edits, and CLI/type generation.</description>\n    <location>/Users/tolga/.openclaw/workspace/openclaw/skills/mcporter/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>nano-banana-pro</name>\n    <description>Generate or edit images via Gemini 3 Pro Image (Nano Banana Pro).</description>\n    <location>/Users/tolga/.openclaw/workspace/openclaw/skills/nano-banana-pro/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>nano-pdf</name>\n    <description>Edit PDFs with natural-language instructions using the nano-pdf CLI.</description>\n    <location>/Users/tolga/.openclaw/workspace/openclaw/skills/nano-pdf/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>obsidian</name>\n    <description>Work with Obsidian vaults (plain Markdown notes) and automate via obsidian-cli.</description>\n    <location>/Users/tolga/.openclaw/workspace/openclaw/skills/obsidian/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>openai-whisper</name>\n    <description>Local speech-to-text with the Whisper CLI (no API key).</description>\n    <location>/Users/tolga/.openclaw/workspace/openclaw/skills/openai-whisper/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>openhue</name>\n    <description>Control Philips Hue lights/scenes via the OpenHue CLI.</description>\n    <location>/Users/tolga/.openclaw/workspace/openclaw/skills/openhue/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>oracle</name>\n    <description>Best practices for using the oracle CLI (prompt + file bundling, engines, sessions, and file attachment patterns).</description>\n    <location>/Users/tolga/.openclaw/workspace/openclaw/skills/oracle/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>ordercli</name>\n    <description>Foodora-only CLI for checking past orders and active order status (Deliveroo WIP).</description>\n    <location>/Users/tolga/.openclaw/workspace/openclaw/skills/ordercli/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>peekaboo</name>\n    <description>Capture and automate macOS UI with the Peekaboo CLI.</description>\n    <location>/Users/tolga/.openclaw/workspace/openclaw/skills/peekaboo/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>session-logs</name>\n    <description>Search and analyze your own session logs (older/parent conversations) using jq.</description>\n    <location>/Users/tolga/.openclaw/workspace/openclaw/skills/session-logs/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>skill-creator</name>\n    <description>Create or update AgentSkills. Use when designing, structuring, or packaging skills with scripts, references, and assets.</description>\n    <location>/Users/tolga/.openclaw/workspace/openclaw/skills/skill-creator/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>songsee</name>\n    <description>Generate spectrograms and feature-panel visualizations from audio with the songsee CLI.</description>\n    <location>/Users/tolga/.openclaw/workspace/openclaw/skills/songsee/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>sonoscli</name>\n    <description>Control Sonos speakers (discover/status/play/volume/group).</description>\n    <location>/Users/tolga/.openclaw/workspace/openclaw/skills/sonoscli/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>spotify-player</name>\n    <description>Terminal Spotify playback/search via spogo (preferred) or spotify_player.</description>\n    <location>/Users/tolga/.openclaw/workspace/openclaw/skills/spotify-player/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>summarize</name>\n    <description>Summarize or extract text/transcripts from URLs, podcasts, and local files (great fallback for “transcribe this YouTube/video”).</description>\n    <location>/Users/tolga/.openclaw/workspace/openclaw/skills/summarize/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>things-mac</name>\n    <description>Manage Things 3 via the `things` CLI on macOS (add/update projects+todos via URL scheme; read/search/list from the local Things database). Use when a user asks OpenClaw to add a task to Things, list inbox/today/upcoming, search tasks, or inspect projects/areas/tags.</description>\n    <location>/Users/tolga/.openclaw/workspace/openclaw/skills/things-mac/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>tmux</name>\n    <description>Remote-control tmux sessions for interactive CLIs by sending keystrokes and scraping pane output.</description>\n    <location>/Users/tolga/.openclaw/workspace/openclaw/skills/tmux/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>video-frames</name>\n    <description>Extract frames or short clips from videos using ffmpeg.</description>\n    <location>/Users/tolga/.openclaw/workspace/openclaw/skills/video-frames/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>wacli</name>\n    <description>Send WhatsApp messages to other people or search/sync WhatsApp history via the wacli CLI (not for normal user chats).</description>\n    <location>/Users/tolga/.openclaw/workspace/openclaw/skills/wacli/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>weather</name>\n    <description>Get current weather and forecasts (no API key required).</description>\n    <location>/Users/tolga/.openclaw/workspace/openclaw/skills/weather/SKILL.md</location>\n  </skill>\n</available_skills>",
+      "skills": [
+        {
+          "name": "1password"
+        },
+        {
+          "name": "apple-notes"
+        },
+        {
+          "name": "apple-reminders"
+        },
+        {
+          "name": "bear-notes"
+        },
+        {
+          "name": "bird"
+        },
+        {
+          "name": "blogwatcher"
+        },
+        {
+          "name": "blucli"
+        },
+        {
+          "name": "camsnap"
+        },
+        {
+          "name": "coding-agent"
+        },
+        {
+          "name": "eightctl"
+        },
+        {
+          "name": "evolution"
+        },
+        {
+          "name": "gemini"
+        },
+        {
+          "name": "gifgrep"
+        },
+        {
+          "name": "github"
+        },
+        {
+          "name": "gog"
+        },
+        {
+          "name": "healthcheck"
+        },
+        {
+          "name": "himalaya"
+        },
+        {
+          "name": "imsg"
+        },
+        {
+          "name": "mcporter"
+        },
+        {
+          "name": "nano-banana-pro",
+          "primaryEnv": "GEMINI_API_KEY"
+        },
+        {
+          "name": "nano-pdf"
+        },
+        {
+          "name": "obsidian"
+        },
+        {
+          "name": "openai-whisper"
+        },
+        {
+          "name": "openhue"
+        },
+        {
+          "name": "oracle"
+        },
+        {
+          "name": "ordercli"
+        },
+        {
+          "name": "peekaboo"
+        },
+        {
+          "name": "session-logs"
+        },
+        {
+          "name": "skill-creator"
+        },
+        {
+          "name": "songsee"
+        },
+        {
+          "name": "sonoscli"
+        },
+        {
+          "name": "spotify-player"
+        },
+        {
+          "name": "summarize"
+        },
+        {
+          "name": "things-mac"
+        },
+        {
+          "name": "tmux"
+        },
+        {
+          "name": "video-frames"
+        },
+        {
+          "name": "wacli"
+        },
+        {
+          "name": "weather"
+        }
+      ],
+      "resolvedSkills": [
+        {
+          "name": "1password",
+          "description": "Set up and use 1Password CLI (op). Use when installing the CLI, enabling desktop app integration, signing in (single or multi-account), or reading/injecting/running secrets via op.",
+          "filePath": "/Users/tolga/.openclaw/workspace/openclaw/skills/1password/SKILL.md",
+          "baseDir": "/Users/tolga/.openclaw/workspace/openclaw/skills/1password",
+          "source": "openclaw-bundled",
+          "disableModelInvocation": false
+        },
+        {
+          "name": "apple-notes",
+          "description": "Manage Apple Notes via the `memo` CLI on macOS (create, view, edit, delete, search, move, and export notes). Use when a user asks OpenClaw to add a note, list notes, search notes, or manage note folders.",
+          "filePath": "/Users/tolga/.openclaw/workspace/openclaw/skills/apple-notes/SKILL.md",
+          "baseDir": "/Users/tolga/.openclaw/workspace/openclaw/skills/apple-notes",
+          "source": "openclaw-bundled",
+          "disableModelInvocation": false
+        },
+        {
+          "name": "apple-reminders",
+          "description": "Manage Apple Reminders via the `remindctl` CLI on macOS (list, add, edit, complete, delete). Supports lists, date filters, and JSON/plain output.",
+          "filePath": "/Users/tolga/.openclaw/workspace/openclaw/skills/apple-reminders/SKILL.md",
+          "baseDir": "/Users/tolga/.openclaw/workspace/openclaw/skills/apple-reminders",
+          "source": "openclaw-bundled",
+          "disableModelInvocation": false
+        },
+        {
+          "name": "bear-notes",
+          "description": "Create, search, and manage Bear notes via grizzly CLI.",
+          "filePath": "/Users/tolga/.openclaw/workspace/openclaw/skills/bear-notes/SKILL.md",
+          "baseDir": "/Users/tolga/.openclaw/workspace/openclaw/skills/bear-notes",
+          "source": "openclaw-bundled",
+          "disableModelInvocation": false
+        },
+        {
+          "name": "bird",
+          "description": "X/Twitter CLI for reading, searching, posting, and engagement via cookies.",
+          "filePath": "/Users/tolga/.openclaw/workspace/openclaw/skills/bird/SKILL.md",
+          "baseDir": "/Users/tolga/.openclaw/workspace/openclaw/skills/bird",
+          "source": "openclaw-bundled",
+          "disableModelInvocation": false
+        },
+        {
+          "name": "blogwatcher",
+          "description": "Monitor blogs and RSS/Atom feeds for updates using the blogwatcher CLI.",
+          "filePath": "/Users/tolga/.openclaw/workspace/openclaw/skills/blogwatcher/SKILL.md",
+          "baseDir": "/Users/tolga/.openclaw/workspace/openclaw/skills/blogwatcher",
+          "source": "openclaw-bundled",
+          "disableModelInvocation": false
+        },
+        {
+          "name": "blucli",
+          "description": "BluOS CLI (blu) for discovery, playback, grouping, and volume.",
+          "filePath": "/Users/tolga/.openclaw/workspace/openclaw/skills/blucli/SKILL.md",
+          "baseDir": "/Users/tolga/.openclaw/workspace/openclaw/skills/blucli",
+          "source": "openclaw-bundled",
+          "disableModelInvocation": false
+        },
+        {
+          "name": "camsnap",
+          "description": "Capture frames or clips from RTSP/ONVIF cameras.",
+          "filePath": "/Users/tolga/.openclaw/workspace/openclaw/skills/camsnap/SKILL.md",
+          "baseDir": "/Users/tolga/.openclaw/workspace/openclaw/skills/camsnap",
+          "source": "openclaw-bundled",
+          "disableModelInvocation": false
+        },
+        {
+          "name": "coding-agent",
+          "description": "Run Codex CLI, Claude Code, OpenCode, or Pi Coding Agent via background process for programmatic control.",
+          "filePath": "/Users/tolga/.openclaw/workspace/openclaw/skills/coding-agent/SKILL.md",
+          "baseDir": "/Users/tolga/.openclaw/workspace/openclaw/skills/coding-agent",
+          "source": "openclaw-bundled",
+          "disableModelInvocation": false
+        },
+        {
+          "name": "eightctl",
+          "description": "Control Eight Sleep pods (status, temperature, alarms, schedules).",
+          "filePath": "/Users/tolga/.openclaw/workspace/openclaw/skills/eightctl/SKILL.md",
+          "baseDir": "/Users/tolga/.openclaw/workspace/openclaw/skills/eightctl",
+          "source": "openclaw-bundled",
+          "disableModelInvocation": false
+        },
+        {
+          "name": "evolution",
+          "description": "Self-improving code evolution system for OpenClaw. Analyze codebase, propose improvements, and apply changes with approval. Runs weekly by default (Sundays 2am).",
+          "filePath": "/Users/tolga/.openclaw/workspace/openclaw/skills/evolution/SKILL.md",
+          "baseDir": "/Users/tolga/.openclaw/workspace/openclaw/skills/evolution",
+          "source": "openclaw-bundled",
+          "disableModelInvocation": false
+        },
+        {
+          "name": "gemini",
+          "description": "Gemini CLI for one-shot Q&A, summaries, and generation.",
+          "filePath": "/Users/tolga/.openclaw/workspace/openclaw/skills/gemini/SKILL.md",
+          "baseDir": "/Users/tolga/.openclaw/workspace/openclaw/skills/gemini",
+          "source": "openclaw-bundled",
+          "disableModelInvocation": false
+        },
+        {
+          "name": "gifgrep",
+          "description": "Search GIF providers with CLI/TUI, download results, and extract stills/sheets.",
+          "filePath": "/Users/tolga/.openclaw/workspace/openclaw/skills/gifgrep/SKILL.md",
+          "baseDir": "/Users/tolga/.openclaw/workspace/openclaw/skills/gifgrep",
+          "source": "openclaw-bundled",
+          "disableModelInvocation": false
+        },
+        {
+          "name": "github",
+          "description": "Interact with GitHub using the `gh` CLI. Use `gh issue`, `gh pr`, `gh run`, and `gh api` for issues, PRs, CI runs, and advanced queries.",
+          "filePath": "/Users/tolga/.openclaw/workspace/openclaw/skills/github/SKILL.md",
+          "baseDir": "/Users/tolga/.openclaw/workspace/openclaw/skills/github",
+          "source": "openclaw-bundled",
+          "disableModelInvocation": false
+        },
+        {
+          "name": "gog",
+          "description": "Google Workspace CLI for Gmail, Calendar, Drive, Contacts, Sheets, and Docs.",
+          "filePath": "/Users/tolga/.openclaw/workspace/openclaw/skills/gog/SKILL.md",
+          "baseDir": "/Users/tolga/.openclaw/workspace/openclaw/skills/gog",
+          "source": "openclaw-bundled",
+          "disableModelInvocation": false
+        },
+        {
+          "name": "healthcheck",
+          "description": "Host security hardening and risk-tolerance configuration for OpenClaw deployments. Use when a user asks for security audits, firewall/SSH/update hardening, risk posture, exposure review, OpenClaw cron scheduling for periodic checks, or version status checks on a machine running OpenClaw (laptop, workstation, Pi, VPS).",
+          "filePath": "/Users/tolga/.openclaw/workspace/openclaw/skills/healthcheck/SKILL.md",
+          "baseDir": "/Users/tolga/.openclaw/workspace/openclaw/skills/healthcheck",
+          "source": "openclaw-bundled",
+          "disableModelInvocation": false
+        },
+        {
+          "name": "himalaya",
+          "description": "CLI to manage emails via IMAP/SMTP. Use `himalaya` to list, read, write, reply, forward, search, and organize emails from the terminal. Supports multiple accounts and message composition with MML (MIME Meta Language).",
+          "filePath": "/Users/tolga/.openclaw/workspace/openclaw/skills/himalaya/SKILL.md",
+          "baseDir": "/Users/tolga/.openclaw/workspace/openclaw/skills/himalaya",
+          "source": "openclaw-bundled",
+          "disableModelInvocation": false
+        },
+        {
+          "name": "imsg",
+          "description": "iMessage/SMS CLI for listing chats, history, watch, and sending.",
+          "filePath": "/Users/tolga/.openclaw/workspace/openclaw/skills/imsg/SKILL.md",
+          "baseDir": "/Users/tolga/.openclaw/workspace/openclaw/skills/imsg",
+          "source": "openclaw-bundled",
+          "disableModelInvocation": false
+        },
+        {
+          "name": "mcporter",
+          "description": "Use the mcporter CLI to list, configure, auth, and call MCP servers/tools directly (HTTP or stdio), including ad-hoc servers, config edits, and CLI/type generation.",
+          "filePath": "/Users/tolga/.openclaw/workspace/openclaw/skills/mcporter/SKILL.md",
+          "baseDir": "/Users/tolga/.openclaw/workspace/openclaw/skills/mcporter",
+          "source": "openclaw-bundled",
+          "disableModelInvocation": false
+        },
+        {
+          "name": "nano-banana-pro",
+          "description": "Generate or edit images via Gemini 3 Pro Image (Nano Banana Pro).",
+          "filePath": "/Users/tolga/.openclaw/workspace/openclaw/skills/nano-banana-pro/SKILL.md",
+          "baseDir": "/Users/tolga/.openclaw/workspace/openclaw/skills/nano-banana-pro",
+          "source": "openclaw-bundled",
+          "disableModelInvocation": false
+        },
+        {
+          "name": "nano-pdf",
+          "description": "Edit PDFs with natural-language instructions using the nano-pdf CLI.",
+          "filePath": "/Users/tolga/.openclaw/workspace/openclaw/skills/nano-pdf/SKILL.md",
+          "baseDir": "/Users/tolga/.openclaw/workspace/openclaw/skills/nano-pdf",
+          "source": "openclaw-bundled",
+          "disableModelInvocation": false
+        },
+        {
+          "name": "obsidian",
+          "description": "Work with Obsidian vaults (plain Markdown notes) and automate via obsidian-cli.",
+          "filePath": "/Users/tolga/.openclaw/workspace/openclaw/skills/obsidian/SKILL.md",
+          "baseDir": "/Users/tolga/.openclaw/workspace/openclaw/skills/obsidian",
+          "source": "openclaw-bundled",
+          "disableModelInvocation": false
+        },
+        {
+          "name": "openai-whisper",
+          "description": "Local speech-to-text with the Whisper CLI (no API key).",
+          "filePath": "/Users/tolga/.openclaw/workspace/openclaw/skills/openai-whisper/SKILL.md",
+          "baseDir": "/Users/tolga/.openclaw/workspace/openclaw/skills/openai-whisper",
+          "source": "openclaw-bundled",
+          "disableModelInvocation": false
+        },
+        {
+          "name": "openhue",
+          "description": "Control Philips Hue lights/scenes via the OpenHue CLI.",
+          "filePath": "/Users/tolga/.openclaw/workspace/openclaw/skills/openhue/SKILL.md",
+          "baseDir": "/Users/tolga/.openclaw/workspace/openclaw/skills/openhue",
+          "source": "openclaw-bundled",
+          "disableModelInvocation": false
+        },
+        {
+          "name": "oracle",
+          "description": "Best practices for using the oracle CLI (prompt + file bundling, engines, sessions, and file attachment patterns).",
+          "filePath": "/Users/tolga/.openclaw/workspace/openclaw/skills/oracle/SKILL.md",
+          "baseDir": "/Users/tolga/.openclaw/workspace/openclaw/skills/oracle",
+          "source": "openclaw-bundled",
+          "disableModelInvocation": false
+        },
+        {
+          "name": "ordercli",
+          "description": "Foodora-only CLI for checking past orders and active order status (Deliveroo WIP).",
+          "filePath": "/Users/tolga/.openclaw/workspace/openclaw/skills/ordercli/SKILL.md",
+          "baseDir": "/Users/tolga/.openclaw/workspace/openclaw/skills/ordercli",
+          "source": "openclaw-bundled",
+          "disableModelInvocation": false
+        },
+        {
+          "name": "peekaboo",
+          "description": "Capture and automate macOS UI with the Peekaboo CLI.",
+          "filePath": "/Users/tolga/.openclaw/workspace/openclaw/skills/peekaboo/SKILL.md",
+          "baseDir": "/Users/tolga/.openclaw/workspace/openclaw/skills/peekaboo",
+          "source": "openclaw-bundled",
+          "disableModelInvocation": false
+        },
+        {
+          "name": "session-logs",
+          "description": "Search and analyze your own session logs (older/parent conversations) using jq.",
+          "filePath": "/Users/tolga/.openclaw/workspace/openclaw/skills/session-logs/SKILL.md",
+          "baseDir": "/Users/tolga/.openclaw/workspace/openclaw/skills/session-logs",
+          "source": "openclaw-bundled",
+          "disableModelInvocation": false
+        },
+        {
+          "name": "skill-creator",
+          "description": "Create or update AgentSkills. Use when designing, structuring, or packaging skills with scripts, references, and assets.",
+          "filePath": "/Users/tolga/.openclaw/workspace/openclaw/skills/skill-creator/SKILL.md",
+          "baseDir": "/Users/tolga/.openclaw/workspace/openclaw/skills/skill-creator",
+          "source": "openclaw-bundled",
+          "disableModelInvocation": false
+        },
+        {
+          "name": "songsee",
+          "description": "Generate spectrograms and feature-panel visualizations from audio with the songsee CLI.",
+          "filePath": "/Users/tolga/.openclaw/workspace/openclaw/skills/songsee/SKILL.md",
+          "baseDir": "/Users/tolga/.openclaw/workspace/openclaw/skills/songsee",
+          "source": "openclaw-bundled",
+          "disableModelInvocation": false
+        },
+        {
+          "name": "sonoscli",
+          "description": "Control Sonos speakers (discover/status/play/volume/group).",
+          "filePath": "/Users/tolga/.openclaw/workspace/openclaw/skills/sonoscli/SKILL.md",
+          "baseDir": "/Users/tolga/.openclaw/workspace/openclaw/skills/sonoscli",
+          "source": "openclaw-bundled",
+          "disableModelInvocation": false
+        },
+        {
+          "name": "spotify-player",
+          "description": "Terminal Spotify playback/search via spogo (preferred) or spotify_player.",
+          "filePath": "/Users/tolga/.openclaw/workspace/openclaw/skills/spotify-player/SKILL.md",
+          "baseDir": "/Users/tolga/.openclaw/workspace/openclaw/skills/spotify-player",
+          "source": "openclaw-bundled",
+          "disableModelInvocation": false
+        },
+        {
+          "name": "summarize",
+          "description": "Summarize or extract text/transcripts from URLs, podcasts, and local files (great fallback for “transcribe this YouTube/video”).",
+          "filePath": "/Users/tolga/.openclaw/workspace/openclaw/skills/summarize/SKILL.md",
+          "baseDir": "/Users/tolga/.openclaw/workspace/openclaw/skills/summarize",
+          "source": "openclaw-bundled",
+          "disableModelInvocation": false
+        },
+        {
+          "name": "things-mac",
+          "description": "Manage Things 3 via the `things` CLI on macOS (add/update projects+todos via URL scheme; read/search/list from the local Things database). Use when a user asks OpenClaw to add a task to Things, list inbox/today/upcoming, search tasks, or inspect projects/areas/tags.",
+          "filePath": "/Users/tolga/.openclaw/workspace/openclaw/skills/things-mac/SKILL.md",
+          "baseDir": "/Users/tolga/.openclaw/workspace/openclaw/skills/things-mac",
+          "source": "openclaw-bundled",
+          "disableModelInvocation": false
+        },
+        {
+          "name": "tmux",
+          "description": "Remote-control tmux sessions for interactive CLIs by sending keystrokes and scraping pane output.",
+          "filePath": "/Users/tolga/.openclaw/workspace/openclaw/skills/tmux/SKILL.md",
+          "baseDir": "/Users/tolga/.openclaw/workspace/openclaw/skills/tmux",
+          "source": "openclaw-bundled",
+          "disableModelInvocation": false
+        },
+        {
+          "name": "video-frames",
+          "description": "Extract frames or short clips from videos using ffmpeg.",
+          "filePath": "/Users/tolga/.openclaw/workspace/openclaw/skills/video-frames/SKILL.md",
+          "baseDir": "/Users/tolga/.openclaw/workspace/openclaw/skills/video-frames",
+          "source": "openclaw-bundled",
+          "disableModelInvocation": false
+        },
+        {
+          "name": "wacli",
+          "description": "Send WhatsApp messages to other people or search/sync WhatsApp history via the wacli CLI (not for normal user chats).",
+          "filePath": "/Users/tolga/.openclaw/workspace/openclaw/skills/wacli/SKILL.md",
+          "baseDir": "/Users/tolga/.openclaw/workspace/openclaw/skills/wacli",
+          "source": "openclaw-bundled",
+          "disableModelInvocation": false
+        },
+        {
+          "name": "weather",
+          "description": "Get current weather and forecasts (no API key required).",
+          "filePath": "/Users/tolga/.openclaw/workspace/openclaw/skills/weather/SKILL.md",
+          "baseDir": "/Users/tolga/.openclaw/workspace/openclaw/skills/weather",
+          "source": "openclaw-bundled",
+          "disableModelInvocation": false
+        }
+      ],
+      "version": 0
+    },
+    "inputTokens": 447,
+    "outputTokens": 58,
+    "totalTokens": 40383,
+    "deliveryContext": {
+      "channel": "webchat",
+      "to": "heartbeat"
+    },
+    "chatType": "direct",
+    "sessionFile": "/Users/tolga/.openclaw/agents/main/sessions/aac76b3c-5267-4877-b63f-12a53b065a09.jsonl",
+    "modelProvider": "zhipu",
+    "systemPromptReport": {
+      "source": "run",
+      "generatedAt": 1772903208885,
+      "sessionId": "aac76b3c-5267-4877-b63f-12a53b065a09",
+      "sessionKey": "agent:main:main",
+      "provider": "zhipu",
+      "model": "glm-5",
+      "workspaceDir": "/Users/tolga/.openclaw/workspace",
+      "bootstrapMaxChars": 20000,
+      "sandbox": {
+        "mode": "off",
+        "sandboxed": false
+      },
+      "systemPrompt": {
+        "chars": 35621,
+        "projectContextChars": 13235,
+        "nonProjectContextChars": 22386
+      },
+      "injectedWorkspaceFiles": [
+        {
+          "name": "AGENTS.md",
+          "path": "/Users/tolga/.openclaw/workspace/AGENTS.md",
+          "missing": false,
+          "rawChars": 1254,
+          "injectedChars": 1254,
+          "truncated": false
+        },
+        {
+          "name": "SOUL.md",
+          "path": "/Users/tolga/.openclaw/workspace/SOUL.md",
+          "missing": false,
+          "rawChars": 1664,
+          "injectedChars": 1664,
+          "truncated": false
+        },
+        {
+          "name": "TOOLS.md",
+          "path": "/Users/tolga/.openclaw/workspace/TOOLS.md",
+          "missing": false,
+          "rawChars": 848,
+          "injectedChars": 848,
+          "truncated": false
+        },
+        {
+          "name": "IDENTITY.md",
+          "path": "/Users/tolga/.openclaw/workspace/IDENTITY.md",
+          "missing": false,
+          "rawChars": 330,
+          "injectedChars": 330,
+          "truncated": false
+        },
+        {
+          "name": "USER.md",
+          "path": "/Users/tolga/.openclaw/workspace/USER.md",
+          "missing": false,
+          "rawChars": 470,
+          "injectedChars": 470,
+          "truncated": false
+        },
+        {
+          "name": "HEARTBEAT.md",
+          "path": "/Users/tolga/.openclaw/workspace/HEARTBEAT.md",
+          "missing": false,
+          "rawChars": 2785,
+          "injectedChars": 2785,
+          "truncated": false
+        },
+        {
+          "name": "BOOTSTRAP.md",
+          "path": "/Users/tolga/.openclaw/workspace/BOOTSTRAP.md",
+          "missing": true,
+          "rawChars": 0,
+          "injectedChars": 68,
+          "truncated": false
+        },
+        {
+          "name": "MEMORY.md",
+          "path": "/Users/tolga/.openclaw/workspace/MEMORY.md",
+          "missing": false,
+          "rawChars": 5478,
+          "injectedChars": 5478,
+          "truncated": false
+        }
+      ],
+      "skills": {
+        "promptChars": 10905,
+        "entries": [
+          {
+            "name": "1password",
+            "blockChars": 350
+          },
+          {
+            "name": "apple-notes",
+            "blockChars": 377
+          },
+          {
+            "name": "apple-reminders",
+            "blockChars": 327
+          },
+          {
+            "name": "bear-notes",
+            "blockChars": 226
+          },
+          {
+            "name": "bird",
+            "blockChars": 234
+          },
+          {
+            "name": "blogwatcher",
+            "blockChars": 245
+          },
+          {
+            "name": "blucli",
+            "blockChars": 226
+          },
+          {
+            "name": "camsnap",
+            "blockChars": 214
+          },
+          {
+            "name": "coding-agent",
+            "blockChars": 281
+          },
+          {
+            "name": "eightctl",
+            "blockChars": 234
+          },
+          {
+            "name": "evolution",
+            "blockChars": 331
+          },
+          {
+            "name": "gemini",
+            "blockChars": 223
+          },
+          {
+            "name": "gifgrep",
+            "blockChars": 245
+          },
+          {
+            "name": "github",
+            "blockChars": 300
+          },
+          {
+            "name": "gog",
+            "blockChars": 234
+          },
+          {
+            "name": "healthcheck",
+            "blockChars": 493
+          },
+          {
+            "name": "himalaya",
+            "blockChars": 385
+          },
+          {
+            "name": "imsg",
+            "blockChars": 224
+          },
+          {
+            "name": "mcporter",
+            "blockChars": 332
+          },
+          {
+            "name": "nano-banana-pro",
+            "blockChars": 247
+          },
+          {
+            "name": "nano-pdf",
+            "blockChars": 236
+          },
+          {
+            "name": "obsidian",
+            "blockChars": 247
+          },
+          {
+            "name": "openai-whisper",
+            "blockChars": 235
+          },
+          {
+            "name": "openhue",
+            "blockChars": 220
+          },
+          {
+            "name": "oracle",
+            "blockChars": 278
+          },
+          {
+            "name": "ordercli",
+            "blockChars": 250
+          },
+          {
+            "name": "peekaboo",
+            "blockChars": 220
+          },
+          {
+            "name": "session-logs",
+            "blockChars": 255
+          },
+          {
+            "name": "skill-creator",
+            "blockChars": 298
+          },
+          {
+            "name": "songsee",
+            "blockChars": 253
+          },
+          {
+            "name": "sonoscli",
+            "blockChars": 227
+          },
+          {
+            "name": "spotify-player",
+            "blockChars": 253
+          },
+          {
+            "name": "summarize",
+            "blockChars": 298
+          },
+          {
+            "name": "things-mac",
+            "blockChars": 438
+          },
+          {
+            "name": "tmux",
+            "blockChars": 257
+          },
+          {
+            "name": "video-frames",
+            "blockChars": 231
+          },
+          {
+            "name": "wacli",
+            "blockChars": 279
+          },
+          {
+            "name": "weather",
+            "blockChars": 222
+          }
+        ]
+      },
+      "tools": {
+        "listChars": 5286,
+        "schemaChars": 26616,
+        "entries": [
+          {
+            "name": "read",
+            "summaryChars": 298,
+            "schemaChars": 392,
+            "propertiesCount": 4
+          },
+          {
+            "name": "edit",
+            "summaryChars": 129,
+            "schemaChars": 591,
+            "propertiesCount": 6
+          },
+          {
+            "name": "write",
+            "summaryChars": 127,
+            "schemaChars": 313,
+            "propertiesCount": 3
+          },
+          {
+            "name": "exec",
+            "summaryChars": 181,
+            "schemaChars": 1175,
+            "propertiesCount": 13
+          },
+          {
+            "name": "process",
+            "summaryChars": 85,
+            "schemaChars": 844,
+            "propertiesCount": 11
+          },
+          {
+            "name": "browser",
+            "summaryChars": 1251,
+            "schemaChars": 1938,
+            "propertiesCount": 30
+          },
+          {
+            "name": "canvas",
+            "summaryChars": 106,
+            "schemaChars": 661,
+            "propertiesCount": 18
+          },
+          {
+            "name": "nodes",
+            "summaryChars": 101,
+            "schemaChars": 1479,
+            "propertiesCount": 33
+          },
+          {
+            "name": "cron",
+            "summaryChars": 2444,
+            "schemaChars": 530,
+            "propertiesCount": 12
+          },
+          {
+            "name": "message",
+            "summaryChars": 89,
+            "schemaChars": 3809,
+            "propertiesCount": 84
+          },
+          {
+            "name": "tts",
+            "summaryChars": 129,
+            "schemaChars": 223,
+            "propertiesCount": 2
+          },
+          {
+            "name": "gateway",
+            "summaryChars": 225,
+            "schemaChars": 465,
+            "propertiesCount": 11
+          },
+          {
+            "name": "agents_list",
+            "summaryChars": 72,
+            "schemaChars": 33,
+            "propertiesCount": 0
+          },
+          {
+            "name": "sessions_list",
+            "summaryChars": 54,
+            "schemaChars": 176,
+            "propertiesCount": 4
+          },
+          {
+            "name": "sessions_history",
+            "summaryChars": 36,
+            "schemaChars": 149,
+            "propertiesCount": 3
+          },
+          {
+            "name": "sessions_send",
+            "summaryChars": 84,
+            "schemaChars": 203,
+            "propertiesCount": 5
+          },
+          {
+            "name": "sessions_spawn",
+            "summaryChars": 107,
+            "schemaChars": 312,
+            "propertiesCount": 8
+          },
+          {
+            "name": "session_status",
+            "summaryChars": 207,
+            "schemaChars": 89,
+            "propertiesCount": 2
+          },
+          {
+            "name": "grep",
+            "summaryChars": 6,
+            "schemaChars": 1570,
+            "propertiesCount": 14
+          },
+          {
+            "name": "glob",
+            "summaryChars": 4,
+            "schemaChars": 829,
+            "propertiesCount": 6
+          },
+          {
+            "name": "task",
+            "summaryChars": 4,
+            "schemaChars": 1053,
+            "propertiesCount": 10
+          },
+          {
+            "name": "task_get",
+            "summaryChars": 46,
+            "schemaChars": 118,
+            "propertiesCount": 1
+          },
+          {
+            "name": "task_list",
+            "summaryChars": 25,
+            "schemaChars": 234,
+            "propertiesCount": 2
+          },
+          {
+            "name": "task_cancel",
+            "summaryChars": 32,
+            "schemaChars": 119,
+            "propertiesCount": 1
+          },
+          {
+            "name": "task_update",
+            "summaryChars": 11,
+            "schemaChars": 989,
+            "propertiesCount": 11
+          },
+          {
+            "name": "task_output",
+            "summaryChars": 96,
+            "schemaChars": 232,
+            "propertiesCount": 2
+          },
+          {
+            "name": "notebook_read",
+            "summaryChars": 13,
+            "schemaChars": 439,
+            "propertiesCount": 3
+          },
+          {
+            "name": "notebook_edit",
+            "summaryChars": 13,
+            "schemaChars": 1602,
+            "propertiesCount": 3
+          },
+          {
+            "name": "notebook_cell_info",
+            "summaryChars": 18,
+            "schemaChars": 136,
+            "propertiesCount": 1
+          },
+          {
+            "name": "read",
+            "summaryChars": 4,
+            "schemaChars": 483,
+            "propertiesCount": 4
+          },
+          {
+            "name": "write",
+            "summaryChars": 5,
+            "schemaChars": 500,
+            "propertiesCount": 4
+          },
+          {
+            "name": "edit",
+            "summaryChars": 4,
+            "schemaChars": 923,
+            "propertiesCount": 5
+          },
+          {
+            "name": "enter_plan_mode",
+            "summaryChars": 226,
+            "schemaChars": 33,
+            "propertiesCount": 0
+          },
+          {
+            "name": "exit_plan_mode",
+            "summaryChars": 215,
+            "schemaChars": 193,
+            "propertiesCount": 2
+          },
+          {
+            "name": "update_plan",
+            "summaryChars": 267,
+            "schemaChars": 430,
+            "propertiesCount": 4
+          },
+          {
+            "name": "web_fetch",
+            "summaryChars": 129,
+            "schemaChars": 360,
+            "propertiesCount": 3
+          },
+          {
+            "name": "image",
+            "summaryChars": 118,
+            "schemaChars": 163,
+            "propertiesCount": 4
+          },
+          {
+            "name": "predictive",
+            "summaryChars": 654,
+            "schemaChars": 565,
+            "propertiesCount": 10
+          },
+          {
+            "name": "evolution",
+            "summaryChars": 967,
+            "schemaChars": 315,
+            "propertiesCount": 7
+          },
+          {
+            "name": "briefing",
+            "summaryChars": 275,
+            "schemaChars": 374,
+            "propertiesCount": 4
+          },
+          {
+            "name": "TodoWrite",
+            "summaryChars": 3288,
+            "schemaChars": 484,
+            "propertiesCount": 1
+          },
+          {
+            "name": "LSP",
+            "summaryChars": 3,
+            "schemaChars": 823,
+            "propertiesCount": 7
+          },
+          {
+            "name": "memory_search",
+            "summaryChars": 235,
+            "schemaChars": 139,
+            "propertiesCount": 3
+          },
+          {
+            "name": "memory_get",
+            "summaryChars": 151,
+            "schemaChars": 128,
+            "propertiesCount": 3
+          }
+        ]
+      }
+    },
+    "memoryFlushAt": 1772880978783,
+    "memoryFlushCompactionCount": 0
+  }
+}

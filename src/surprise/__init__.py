@@ -1,13 +1,12 @@
 """Bayesian surprise module for novelty and event boundary detection."""
 
-from .bayesian_surprise import (
+# Use numpy-only version (no PyTorch dependency)
+from .bayesian_surprise_numpy import (
     BayesianSurpriseEngine,
-    SurpriseConfig,
-    PredictiveModel
+    SurpriseConfig
 )
 
 __all__ = [
     "BayesianSurpriseEngine",
-    "SurpriseConfig",
-    "PredictiveModel"
+    "SurpriseConfig"
 ]

@@ -20,8 +20,17 @@ import numpy as np
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from collections import deque
-import torch
-import torch.nn as nn
+
+# Make torch optional (heavy dependency)
+try:
+    import torch
+    import torch.nn as nn
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+    torch = None
+    nn = None
+
 from scipy.stats import entropy
 
 
